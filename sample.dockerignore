@@ -1,0 +1,41 @@
+# Version Control
+.git
+.gitignore
+
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build Outputs
+dist/
+build/
+
+# Environment Variables
+.env
+.env.*
+
+# Docker
+docker-compose.yml
+.dockerignore
+sample.dockerignore
+sample.gitignore
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Database Data
+postgres_data/
+
+# Tests & Docs
+coverage/
+__tests__/
+README.md
+docs/
