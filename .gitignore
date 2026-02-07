@@ -5,6 +5,9 @@
 #Database
 postgres_data/
 
+#Docker files
+.dockerignore
+
 #Log files
 *.log
 **/*.log
