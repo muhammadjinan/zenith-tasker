@@ -35,7 +35,7 @@ pnpm-debug.log*
 Thumbs.db
 
 # Database
-postgres_data/
+db_data/
 
 # Optional: Ignore Docker specific files if you don't want them in repo
 # .dockerignore
