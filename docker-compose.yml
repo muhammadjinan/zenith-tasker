@@ -4,7 +4,7 @@ services:
     image: postgres:15-alpine
     restart: always
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U user_admin -d productivity_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 10

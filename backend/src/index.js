@@ -63,6 +63,7 @@ const initDb = async () => {
       );
       ALTER TABLE pages ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
       ALTER TABLE pages ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+      ALTER TABLE pages ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE;
 
       -- Password Reset Tokens Table
       CREATE TABLE IF NOT EXISTS password_resets (
@@ -239,6 +240,23 @@ app.put('/pages/:id', verifyToken, async (req, res) => {
     const result = await db.query(
       'UPDATE pages SET title = COALESCE($1, title), content = COALESCE($2, content), updated_at = NOW() WHERE id = $3 AND user_id = $4 RETURNING *',
       [title, content, id, req.user.user_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Page not found or unauthorized' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH toggle favorite
+app.patch('/pages/:id/favorite', verifyToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(
+      'UPDATE pages SET is_favorite = NOT COALESCE(is_favorite, FALSE) WHERE id = $1 AND user_id = $2 RETURNING *',
+      [id, req.user.user_id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Page not found or unauthorized' });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -38,8 +39,17 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
+          {/* Protected Routes */}
           <Route
             path="/"
+            element={
+              <RequireAuth>
+                <Home />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/dashboard"
             element={
               <RequireAuth>
                 <Dashboard />
@@ -53,4 +63,3 @@ function App() {
 }
 
 export default App;
-

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import Sidebar from '../components/Sidebar';
@@ -11,10 +12,13 @@ import html2pdf from 'html2pdf.js';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-// Strip HTML tags for preview
+// Strip HTML tags and decode entities for preview
 const stripHtml = (html) => {
     if (!html) return '';
-    return html.replace(/<[^>]*>/g, '').slice(0, 100);
+    // Create a temporary element to decode HTML entities
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return (temp.textContent || temp.innerText || '').slice(0, 100);
 };
 
 function Dashboard() {
@@ -24,8 +28,40 @@ function Dashboard() {
     const [displayMode, setDisplayMode] = useState('cards'); // 'cards' | 'rows'
     const [editMode, setEditMode] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [hasChanges, setHasChanges] = useState(false); // Track unsaved changes
+    const [saveSuccess, setSaveSuccess] = useState(false); // Show save feedback
     const [activeView, setActiveView] = useState('pages'); // 'pages' | 'tasks'
+    const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'todo' | 'inprogress' | 'done' | 'overdue'
+    const [pagesFilter, setPagesFilter] = useState('all'); // 'all' | 'recent' | 'favorites'
+    const [tasks, setTasks] = useState([]); // For sidebar counts
+    const [showUnsavedModal, setShowUnsavedModal] = useState(false); // Unsaved changes warning
+    const [pendingNavigation, setPendingNavigation] = useState(null); // Store pending navigation action
     const { logout, user } = useAuth();
+    const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Handle URL parameters on mount
+    useEffect(() => {
+        const view = searchParams.get('view');
+        const pageId = searchParams.get('page');
+        const edit = searchParams.get('edit');
+        const filter = searchParams.get('filter');
+        const pagesFilterParam = searchParams.get('pagesFilter');
+
+        if (view === 'tasks') {
+            setActiveView('tasks');
+            if (filter) setTaskFilter(filter);
+        } else if (view === 'pages' || pageId) {
+            setActiveView('pages');
+            if (pagesFilterParam) setPagesFilter(pagesFilterParam);
+            if (pageId) {
+                const numericPageId = parseInt(pageId, 10);
+                setActivePageId(numericPageId);
+                setViewMode('page');
+                if (edit === 'true') setEditMode(true);
+            }
+        }
+    }, [searchParams]);
 
     const authenticatedFetch = useCallback(async (url, options = {}) => {
         const headers = {
@@ -41,11 +77,18 @@ function Dashboard() {
         if (!pageId) return false;
 
         setIsSaving(true);
+        setSaveSuccess(false);
         try {
             const response = await authenticatedFetch(`${API_URL}/pages/${pageId}`, {
                 method: 'PUT',
                 body: JSON.stringify({ title, content }),
             });
+            if (response.ok) {
+                setHasChanges(false);
+                setSaveSuccess(true);
+                // Auto-hide success message after 2 seconds
+                setTimeout(() => setSaveSuccess(false), 2000);
+            }
             return response.ok;
         } catch (err) {
             console.error('Failed to save page:', err);
@@ -55,10 +98,11 @@ function Dashboard() {
         }
     }, [authenticatedFetch]);
 
-    // Fetch pages on load
+    // Fetch pages and tasks on load
     useEffect(() => {
         if (!user?.token) return;
 
+        // Fetch pages
         authenticatedFetch(`${API_URL}/pages`)
             .then(res => {
                 if (!res.ok) throw new Error('Failed to fetch pages');
@@ -70,9 +114,48 @@ function Dashboard() {
                 }
             })
             .catch(err => console.error('Failed to fetch pages:', err));
+
+        // Fetch tasks for sidebar counts
+        authenticatedFetch(`${API_URL}/tasks`)
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to fetch tasks');
+                return res.json();
+            })
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setTasks(data);
+                }
+            })
+            .catch(err => console.error('Failed to fetch tasks:', err));
     }, [user?.token, authenticatedFetch]);
 
     const activePage = pages.find(p => p.id === activePageId);
+
+    // Filter pages based on pagesFilter
+    const filteredPages = React.useMemo(() => {
+        switch (pagesFilter) {
+            case 'recent':
+                // Sort by updated_at descending and show last 5
+                return [...pages]
+                    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+                    .slice(0, 5);
+            case 'favorites':
+                // Filter by is_favorite flag (if exists), otherwise return empty
+                return pages.filter(p => p.is_favorite);
+            case 'all':
+            default:
+                return pages;
+        }
+    }, [pages, pagesFilter]);
+
+    // Get page title based on filter
+    const getPageTitle = () => {
+        switch (pagesFilter) {
+            case 'recent': return 'Recently Edited';
+            case 'favorites': return 'Favorite Pages';
+            default: return 'My Pages';
+        }
+    };
 
     // Open a page in viewing mode
     const openPage = (pageId) => {
@@ -132,6 +215,20 @@ function Dashboard() {
         }
     };
 
+    // Toggle favorite
+    const toggleFavorite = async (e, pageId) => {
+        e.stopPropagation(); // Prevent opening the page
+        try {
+            const res = await authenticatedFetch(`${API_URL}/pages/${pageId}/favorite`, { method: 'PATCH' });
+            if (res.ok) {
+                const updatedPage = await res.json();
+                setPages(prev => prev.map(p => p.id === pageId ? updatedPage : p));
+            }
+        } catch (err) {
+            console.error('Failed to toggle favorite:', err);
+        }
+    };
+
     // Handle reorder
     const handleReorder = async (newPages) => {
         setPages(newPages);
@@ -156,6 +253,7 @@ function Dashboard() {
         setPages(prev => prev.map(p =>
             p.id === activePageId ? { ...p, [field]: value } : p
         ));
+        setHasChanges(true); // Mark that there are unsaved changes
     };
 
     // Manual save
@@ -163,6 +261,51 @@ function Dashboard() {
         if (activePage) {
             await savePageToServer(activePageId, activePage.title, activePage.content);
         }
+    };
+
+    // Handle navigation with unsaved changes check
+    const handleNavigation = (action) => {
+        // If we're editing and have unsaved changes, show warning
+        if (editMode && hasChanges) {
+            setPendingNavigation(() => action);
+            setShowUnsavedModal(true);
+            return;
+        }
+        // Otherwise, execute the navigation
+        action();
+    };
+
+    // Execute the pending navigation after user confirms
+    const executeNavigation = () => {
+        setViewMode('list');
+        setActivePageId(null);
+        setEditMode(false);
+        setHasChanges(false);
+        if (pendingNavigation) {
+            pendingNavigation();
+            setPendingNavigation(null);
+        }
+        setShowUnsavedModal(false);
+    };
+
+    // Save and then navigate
+    const handleSaveAndNavigate = async () => {
+        if (activePage) {
+            await savePageToServer(activePageId, activePage.title, activePage.content);
+        }
+        executeNavigation();
+    };
+
+    // Discard changes and navigate
+    const handleDiscardAndNavigate = () => {
+        setHasChanges(false);
+        executeNavigation();
+    };
+
+    // Cancel navigation (stay on current page)
+    const handleCancelNavigation = () => {
+        setShowUnsavedModal(false);
+        setPendingNavigation(null);
     };
 
     // Export PDF
@@ -207,20 +350,47 @@ function Dashboard() {
                 pages={pages}
                 onCreatePage={createNewPage}
                 activePageId={activePageId}
-                onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
+                onSelectPage={(pageId) => handleNavigation(() => { setActiveView('pages'); openPage(pageId); })}
                 onDeletePage={deletePage}
                 onReorder={handleReorder}
                 user={user}
                 onLogout={logout}
                 activeView={activeView}
-                onViewChange={(view) => { setActiveView(view); if (view === 'tasks') setViewMode('list'); }}
+                onViewChange={(view) => handleNavigation(() => {
+                    if (view === 'home') { navigate('/'); return; }
+                    setActiveView(view);
+                    setViewMode('list');
+                    setActivePageId(null);
+                    setEditMode(false);
+                })}
+                taskFilter={taskFilter}
+                onTaskFilterChange={(filter) => handleNavigation(() => {
+                    setActiveView('tasks');
+                    setTaskFilter(filter);
+                    setViewMode('list');
+                    setActivePageId(null);
+                    setEditMode(false);
+                })}
+                pagesFilter={pagesFilter}
+                onPagesFilterChange={(filter) => handleNavigation(() => {
+                    setActiveView('pages');
+                    setPagesFilter(filter);
+                    setViewMode('list');
+                    setActivePageId(null);
+                    setEditMode(false);
+                })}
+                tasks={tasks}
             />
 
             <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 p-6">
 
                 {/* TASKS VIEW */}
                 {activeView === 'tasks' && (
-                    <TaskList pages={pages} onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }} />
+                    <TaskList
+                        pages={pages}
+                        onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
+                        externalFilter={taskFilter}
+                    />
                 )}
 
                 {/* LIST VIEW (Pages) */}
@@ -228,7 +398,7 @@ function Dashboard() {
                     <div className="flex flex-col h-full">
                         {/* Header */}
                         <div className="flex justify-between items-center mb-6">
-                            <h1 className="text-3xl font-semibold text-white">My Pages</h1>
+                            <h1 className="text-3xl font-semibold text-white">{getPageTitle()}</h1>
                             <div className="flex items-center gap-3">
                                 {/* View Toggle */}
                                 <div className="flex bg-slate-800/50 rounded-lg p-1 border border-white/10">
@@ -269,18 +439,22 @@ function Dashboard() {
 
                         {/* Pages Grid/List */}
                         <div className="flex-1 overflow-y-auto">
-                            {pages.length === 0 ? (
+                            {filteredPages.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-6">
                                     <div className="w-20 h-20 rounded-2xl bg-slate-800/50 flex items-center justify-center border border-white/5">
                                         <svg className="w-10 h-10 text-cyan-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
                                     </div>
-                                    <p className="text-lg">No pages yet. Create your first one!</p>
+                                    <p className="text-lg">
+                                        {pagesFilter === 'favorites' ? 'No favorite pages yet.' :
+                                            pagesFilter === 'recent' ? 'No recent pages.' :
+                                                'No pages yet. Create your first one!'}
+                                    </p>
                                 </div>
                             ) : displayMode === 'cards' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {pages.map(page => (
+                                    {filteredPages.map(page => (
                                         <div
                                             key={page.id}
                                             onClick={() => openPage(page.id)}
@@ -290,7 +464,16 @@ function Dashboard() {
                                                 <h3 className="font-semibold text-white group-hover:text-cyan-400 transition-colors truncate flex-1">
                                                     {page.title || 'Untitled'}
                                                 </h3>
-                                                <span className="px-2 py-0.5 text-xs rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                                                <button
+                                                    onClick={(e) => toggleFavorite(e, page.id)}
+                                                    className={`p-1 rounded-md transition-all hover:bg-yellow-500/10 ${page.is_favorite ? 'text-yellow-400' : 'text-slate-500 hover:text-yellow-400'}`}
+                                                    title={page.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                                                >
+                                                    <svg className="w-4 h-4" fill={page.is_favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                                    </svg>
+                                                </button>
+                                                <span className="px-2 py-0.5 text-xs rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 ml-2">
                                                     DOC
                                                 </span>
                                             </div>
@@ -302,7 +485,7 @@ function Dashboard() {
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    {pages.map(page => (
+                                    {filteredPages.map(page => (
                                         <div
                                             key={page.id}
                                             onClick={() => openPage(page.id)}
@@ -321,6 +504,15 @@ function Dashboard() {
                                                     {stripHtml(page.content) || 'No content yet...'}
                                                 </p>
                                             </div>
+                                            <button
+                                                onClick={(e) => toggleFavorite(e, page.id)}
+                                                className={`p-1.5 rounded-md transition-all hover:bg-yellow-500/10 ${page.is_favorite ? 'text-yellow-400' : 'text-slate-500 hover:text-yellow-400'}`}
+                                                title={page.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+                                            >
+                                                <svg className="w-4 h-4" fill={page.is_favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                                </svg>
+                                            </button>
                                             <span className="text-xs text-slate-500">
                                                 {new Date(page.updated_at).toLocaleDateString()}
                                             </span>
@@ -362,11 +554,37 @@ function Dashboard() {
                                 )}
                             </div>
                             <div className="flex items-center gap-3">
+                                {editMode ? (
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={!hasChanges && !saveSuccess || isSaving}
+                                        className={`px-4 py-2 rounded-lg border transition-all font-medium ${saveSuccess
+                                            ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                            : hasChanges
+                                                ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/20'
+                                                : 'bg-slate-800/50 text-slate-500 border-slate-700 cursor-not-allowed'
+                                            }`}
+                                    >
+                                        {isSaving ? 'Saving...' : saveSuccess ? '✓ Saved!' : hasChanges ? 'Save Changes' : 'No Changes'}
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={toggleEditMode}
+                                        className="px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all font-medium"
+                                    >
+                                        Edit Page
+                                    </button>
+                                )}
                                 <button
-                                    onClick={activePageId && editMode ? handleSave : toggleEditMode}
-                                    className="px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all font-medium"
+                                    onClick={(e) => toggleFavorite(e, activePage.id)}
+                                    className={`p-2 rounded-lg transition-all border ${activePage.is_favorite
+                                        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/20'
+                                        : 'bg-slate-800/50 text-slate-400 border-white/10 hover:text-yellow-400 hover:border-yellow-500/30'}`}
+                                    title={activePage.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
                                 >
-                                    {editMode ? 'Save Changes' : 'Edit Page'}
+                                    <svg className="w-5 h-5" fill={activePage.is_favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                    </svg>
                                 </button>
                                 <div className="h-6 w-px bg-white/10 mx-2"></div>
                                 <button title="Export to PDF" onClick={handleExportPDF} className="p-2 text-slate-400 hover:text-white transition-colors">
@@ -405,9 +623,49 @@ function Dashboard() {
                             )}
                         </div>
                     </div>
-                )}
-            </main>
-        </div>
+                )
+                }
+            </main >
+
+            {/* Unsaved Changes Warning Modal */}
+            {showUnsavedModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-white">Unsaved Changes</h3>
+                        </div>
+                        <p className="text-slate-400 mb-6">
+                            You have unsaved changes. Would you like to save them before leaving?
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handleSaveAndNavigate}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all font-medium"
+                            >
+                                Save & Leave
+                            </button>
+                            <button
+                                onClick={handleDiscardAndNavigate}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all font-medium"
+                            >
+                                Discard
+                            </button>
+                            <button
+                                onClick={handleCancelNavigation}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-slate-800 text-slate-300 border border-white/10 hover:bg-slate-700 transition-all font-medium"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div >
     );
 }
 

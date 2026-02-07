@@ -4,14 +4,29 @@ import { useAuth } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-const TaskList = ({ pages, onSelectPage }) => {
+const TaskList = ({ pages, onSelectPage, externalFilter }) => {
     const { user } = useAuth();
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState('list'); // 'list' or 'kanban'
-    const [filter, setFilter] = useState('all'); // 'all', 'todo', 'in_progress', 'done'
+    const [filter, setFilter] = useState(externalFilter || 'all'); // 'all', 'todo', 'in_progress', 'done', 'overdue'
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [isAddingTask, setIsAddingTask] = useState(false);
+
+    // Sync with external filter when it changes
+    useEffect(() => {
+        if (externalFilter) {
+            // Map sidebar filter values to TaskList filter values
+            const filterMap = {
+                'all': 'all',
+                'todo': 'todo',
+                'inprogress': 'in_progress',
+                'done': 'done',
+                'overdue': 'overdue'
+            };
+            setFilter(filterMap[externalFilter] || 'all');
+        }
+    }, [externalFilter]);
 
     const fetchTasks = useCallback(async () => {
         try {
