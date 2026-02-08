@@ -98,22 +98,26 @@ function Dashboard() {
         }
     }, [authenticatedFetch]);
 
+    // Fetch pages from server
+    const fetchPages = useCallback(async () => {
+        if (!user?.token) return;
+        try {
+            const res = await authenticatedFetch(`${API_URL}/pages`);
+            if (!res.ok) throw new Error('Failed to fetch pages');
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setPages(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch pages:', err);
+        }
+    }, [user?.token, authenticatedFetch]);
+
     // Fetch pages and tasks on load
     useEffect(() => {
         if (!user?.token) return;
 
-        // Fetch pages
-        authenticatedFetch(`${API_URL}/pages`)
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to fetch pages');
-                return res.json();
-            })
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setPages(data);
-                }
-            })
-            .catch(err => console.error('Failed to fetch pages:', err));
+        fetchPages();
 
         // Fetch tasks for sidebar counts
         authenticatedFetch(`${API_URL}/tasks`)
@@ -127,7 +131,7 @@ function Dashboard() {
                 }
             })
             .catch(err => console.error('Failed to fetch tasks:', err));
-    }, [user?.token, authenticatedFetch]);
+    }, [user?.token, authenticatedFetch, fetchPages]);
 
     const activePage = pages.find(p => p.id === activePageId);
 
@@ -297,7 +301,8 @@ function Dashboard() {
     };
 
     // Discard changes and navigate
-    const handleDiscardAndNavigate = () => {
+    const handleDiscardAndNavigate = async () => {
+        await fetchPages(); // Revert local changes by fetching from server
         setHasChanges(false);
         executeNavigation();
     };
