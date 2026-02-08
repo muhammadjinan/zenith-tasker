@@ -29,6 +29,3 @@ Thumbs.db
 # Uploads
 uploads/
 **/uploads/
-
-#vite file
-**/vite.config.js
