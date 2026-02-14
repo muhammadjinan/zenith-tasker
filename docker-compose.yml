@@ -52,8 +52,10 @@ services:
       - "${FRONTEND_PORT}:3000"
     environment:
       - VITE_API_URL=${VITE_API_URL}
+      - VITE_ALLOWED_HOSTS=${VITE_ALLOWED_HOSTS}
     depends_on:
       - backend
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.js:/app/vite.config.js
