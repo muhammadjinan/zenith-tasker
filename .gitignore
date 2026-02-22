@@ -1,15 +1,4 @@
-#Environment files
-.env
-**/.env
-
-#Database
-postgres_data/
-
-#Log files
-*.log
-**/*.log
-
-# Node modules
+# Dependencies
 node_modules/
 **/node_modules/
 
@@ -17,15 +6,43 @@ node_modules/
 dist/
 build/
 
-# IDE files
+# Environment variables (SENSITIVE)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Database data
+postgres_data/
+
+# User uploads
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / Editor
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Uploads
-uploads/
-**/uploads/
+# Testing
+coverage/
+.nyc_output/
+
+# Sample files (keep tracked but ignore if you prefer)
+# sample.dockerignore
+# sample.gitignore

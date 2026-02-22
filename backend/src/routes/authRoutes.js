@@ -31,6 +31,7 @@ router.post('/register', async (req, res) => {
         }
 
         const user = await userModel.createUser(username, password);
+        await userModel.recordLogin(user.id);
 
         const token = jwt.sign(
             { user_id: user.id, username: username },
@@ -68,6 +69,8 @@ router.post('/login', async (req, res) => {
                 await db.query('UPDATE users SET status = $1 WHERE id = $2', ['active', user.id]);
                 console.log(`[Auth] Reactivated user: ${user.username}`);
             }
+
+            await userModel.recordLogin(user.id);
 
             return res.status(200).json({
                 id: user.id,
@@ -315,6 +318,8 @@ router.post('/register-google', async (req, res) => {
         );
 
         res.status(201).json({ token, ...newUser });
+        // Record login async (don't block response)
+        userModel.recordLogin(newUser.id).catch(err => console.error('recordLogin error:', err));
 
     } catch (err) {
         console.error('Google registration error:', err);

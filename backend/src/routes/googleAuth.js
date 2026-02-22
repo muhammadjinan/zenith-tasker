@@ -30,6 +30,7 @@ if (googleEnabled) {
                 // 1. Check if user exists by Google ID
                 let user = await userModel.findUserByGoogleId(googleId);
                 if (user) {
+                    await userModel.recordLogin(user.id);
                     return done(null, user);
                 }
 
@@ -37,6 +38,7 @@ if (googleEnabled) {
                 user = await userModel.findUserByEmail(email);
                 if (user) {
                     user = await userModel.linkGoogleAccount(user.id, googleId, profilePic);
+                    await userModel.recordLogin(user.id);
                     return done(null, user);
                 }
 

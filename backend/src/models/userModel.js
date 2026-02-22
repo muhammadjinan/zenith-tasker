@@ -106,9 +106,21 @@ const isResetAllowed = async (userId) => {
 
 const getAllUsers = async () => {
     const result = await db.query(
-        'SELECT id, username, email, profile_pic, is_admin, reset_allowed_until, created_at FROM users ORDER BY created_at DESC'
+        `SELECT id, username, email, profile_pic, is_admin, status, reset_allowed_until, last_login, created_at,
+         COALESCE((
+           SELECT COUNT(DISTINCT DATE(logged_in_at))
+           FROM login_history
+           WHERE login_history.user_id = users.id
+             AND logged_in_at >= NOW() - INTERVAL '14 days'
+         ), 0)::int AS login_days_14d
+         FROM users ORDER BY created_at DESC`
     );
     return result.rows;
+};
+
+const recordLogin = async (userId) => {
+    await db.query('INSERT INTO login_history (user_id) VALUES ($1)', [userId]);
+    await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [userId]);
 };
 
 // ============ Google OAuth ============
@@ -154,6 +166,26 @@ const deleteUser = async (userId) => {
     return true;
 };
 
+// ============ Dashboard Layout ============
+
+const getDashboardLayout = async (userId) => {
+    const result = await db.query(
+        'SELECT layout, hidden_widgets FROM dashboard_layouts WHERE user_id = $1',
+        [userId]
+    );
+    return result.rows[0] || null;
+};
+
+const saveDashboardLayout = async (userId, layout, hiddenWidgets) => {
+    await db.query(
+        `INSERT INTO dashboard_layouts (user_id, layout, hidden_widgets, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE SET layout = $2, hidden_widgets = $3, updated_at = NOW()`,
+        [userId, JSON.stringify(layout), hiddenWidgets]
+    );
+};
+
 module.exports = {
     createUser,
     findUserByUsername,
@@ -171,6 +203,9 @@ module.exports = {
     clearResetAllowed,
     isResetAllowed,
     getAllUsers,
+    recordLogin,
     deactivateUser,
     deleteUser,
+    getDashboardLayout,
+    saveDashboardLayout,
 };

@@ -66,7 +66,7 @@ const SortablePageItem = ({ page, activePageId, onSelectPage, onDeletePage }) =>
   );
 };
 
-const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, onDeletePage, onReorder, user, onLogout, activeView, onViewChange, taskFilter = 'all', onTaskFilterChange, pagesFilter = 'all', onPagesFilterChange }) => {
+const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, onDeletePage, onReorder, user, onLogout, activeView, onViewChange, taskFilter = 'all', onTaskFilterChange, pagesFilter = 'all', onPagesFilterChange, isOpen = true, onClose }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isPagesExpanded, setIsPagesExpanded] = useState(activeView === 'pages');
@@ -120,9 +120,32 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
 
   const profilePicUrl = getProfilePicUrl(user?.profile_pic);
 
+  // Close sidebar on ESC
+  useEffect(() => {
+    const handleEsc = (e) => { if (e.key === 'Escape' && onClose) onClose(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  // Helper to close sidebar on mobile after navigation
+  const closeMobile = () => { if (onClose) onClose(); };
+
   return (
     <>
-      <div className="w-64 h-screen flex flex-col relative z-20 bg-slate-950/95 border-r border-white/5">
+      {/* Mobile backdrop */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden transition-opacity"
+          onClick={onClose}
+        />
+      )}
+
+      <div className={`
+        w-64 h-screen flex flex-col z-40 bg-slate-950/95 border-r border-white/5 flex-shrink-0
+        fixed left-0 top-0 lg:relative lg:left-auto lg:top-auto
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
         {/* Brand */}
         <div className="p-6 pb-4">
           <div className="flex items-center gap-3">
@@ -161,7 +184,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
           {/* Home Button */}
           <div className="mb-2">
             <button
-              onClick={() => onViewChange('home')}
+              onClick={() => { onViewChange('home'); closeMobile(); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${activeView === 'home'
                 ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                 : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -202,7 +225,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
             {isTasksExpanded && (
               <div className="space-y-0.5 ml-2">
                 <button
-                  onClick={() => onTaskFilterChange && onTaskFilterChange('all')}
+                  onClick={() => { onTaskFilterChange && onTaskFilterChange('all'); closeMobile(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'all'
                     ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -216,7 +239,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
                 </button>
 
                 <button
-                  onClick={() => onTaskFilterChange && onTaskFilterChange('todo')}
+                  onClick={() => { onTaskFilterChange && onTaskFilterChange('todo'); closeMobile(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'todo'
                     ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -230,7 +253,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
                 </button>
 
                 <button
-                  onClick={() => onTaskFilterChange && onTaskFilterChange('inprogress')}
+                  onClick={() => { onTaskFilterChange && onTaskFilterChange('inprogress'); closeMobile(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'inprogress'
                     ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -244,7 +267,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
                 </button>
 
                 <button
-                  onClick={() => onTaskFilterChange && onTaskFilterChange('done')}
+                  onClick={() => { onTaskFilterChange && onTaskFilterChange('done'); closeMobile(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'done'
                     ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -258,7 +281,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
                 </button>
 
                 <button
-                  onClick={() => onTaskFilterChange && onTaskFilterChange('overdue')}
+                  onClick={() => { onTaskFilterChange && onTaskFilterChange('overdue'); closeMobile(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'overdue'
                     ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -296,7 +319,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
               <span className={`text-sm font-medium ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-400'}`}>Pages</span>
             </button>
             <button
-              onClick={onCreatePage}
+              onClick={() => { onCreatePage(); closeMobile(); }}
               className="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all ml-2"
               title="New Page"
             >
@@ -310,7 +333,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
           {isPagesExpanded && (
             <div className="space-y-0.5 ml-2">
               <button
-                onClick={() => onPagesFilterChange && onPagesFilterChange('all')}
+                onClick={() => { onPagesFilterChange && onPagesFilterChange('all'); closeMobile(); }}
                 className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'all'
                   ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                   : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -324,7 +347,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
               </button>
 
               <button
-                onClick={() => onPagesFilterChange && onPagesFilterChange('recent')}
+                onClick={() => { onPagesFilterChange && onPagesFilterChange('recent'); closeMobile(); }}
                 className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'recent'
                   ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                   : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -338,7 +361,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
               </button>
 
               <button
-                onClick={() => onPagesFilterChange && onPagesFilterChange('favorites')}
+                onClick={() => { onPagesFilterChange && onPagesFilterChange('favorites'); closeMobile(); }}
                 className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'favorites'
                   ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                   : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
@@ -400,7 +423,7 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
 
             {/* Logout Button */}
             <button
-              onClick={onLogout}
+              onClick={() => { onLogout(); closeMobile(); }}
               className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-all"
               title="Logout"
             >

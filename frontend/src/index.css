@@ -1,5 +1,5 @@
 /* Google Fonts Import - must come first */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -21,7 +21,7 @@
 
     /* Fonts */
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-serif: 'Lora', Georgia, serif;
 
     /* Glass Effects */
     --glass-bg: rgba(20, 29, 43, 0.8);
@@ -343,4 +343,78 @@
   height: auto;
   border-radius: 0.5rem;
   margin: 1rem 0;
+}
+
+/* React Grid Layout Overrides */
+.react-grid-item {
+  transition: all 200ms ease;
+  overflow: visible !important;
+}
+
+/* Elevate grid items that contain open dropdowns above siblings */
+.react-grid-item:has(.z-50) {
+  z-index: 50 !important;
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: rgba(34, 211, 238, 0.1) !important;
+  border: 2px dashed rgba(34, 211, 238, 0.3) !important;
+  border-radius: 1rem;
+  opacity: 1 !important;
+}
+
+.react-grid-item>.react-resizable-handle {
+  z-index: 10;
+}
+
+.react-grid-item>.react-resizable-handle::after {
+  border-right-color: rgba(148, 163, 184, 0.4) !important;
+  border-bottom-color: rgba(148, 163, 184, 0.4) !important;
+  width: 7px !important;
+  height: 7px !important;
+}
+
+.react-grid-item>.react-resizable-handle:hover::after {
+  border-right-color: rgba(34, 211, 238, 0.8) !important;
+  border-bottom-color: rgba(34, 211, 238, 0.8) !important;
+}
+
+.react-grid-item.resizing {
+  z-index: 50;
+}
+
+.react-grid-item.react-draggable-dragging {
+  z-index: 50;
+  opacity: 0.9;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* === Mobile Kanban Carousel === */
+.kanban-carousel {
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
+}
+
+.kanban-carousel::-webkit-scrollbar {
+  display: none;
+  /* Chrome/Safari */
+}
+
+/* Popup slide-up animation */
+@keyframes kanbanPopupEnter {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kanban-popup-enter {
+  animation: kanbanPopupEnter 0.25s ease-out;
 }

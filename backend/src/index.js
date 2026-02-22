@@ -53,6 +53,7 @@ const initDb = async () => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_allowed_until TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
 
       -- Pages Table
       CREATE TABLE IF NOT EXISTS pages (
@@ -100,6 +101,21 @@ const initDb = async () => {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      -- Login History Table
+      CREATE TABLE IF NOT EXISTS login_history (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        logged_in_at TIMESTAMP DEFAULT NOW()
+      );
+
+      -- Dashboard Layouts Table
+      CREATE TABLE IF NOT EXISTS dashboard_layouts (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        layout JSONB NOT NULL DEFAULT '[]',
+        hidden_widgets TEXT[] DEFAULT '{}',
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
       -- Performance Indexes
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
@@ -109,6 +125,8 @@ const initDb = async () => {
       CREATE INDEX IF NOT EXISTS idx_tasks_page_id ON tasks(page_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
       CREATE INDEX IF NOT EXISTS idx_subtasks_task_id ON subtasks(task_id);
+      CREATE INDEX IF NOT EXISTS idx_login_history_user_id ON login_history(user_id);
+      CREATE INDEX IF NOT EXISTS idx_login_history_logged_in_at ON login_history(logged_in_at);
     `);
     console.log('Database initialized: tables ready');
   } catch (err) {
@@ -128,6 +146,7 @@ const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const googleAuthRoutes = require('./routes/googleAuth');
 const taskRoutes = require('./routes/taskRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const passport = require('passport');
 const path = require('path');
 
@@ -142,6 +161,7 @@ app.use('/auth', authLimiter, authRoutes);
 app.use('/auth', authLimiter, googleAuthRoutes);  // Google OAuth routes under /auth
 app.use('/admin', adminRoutes);
 app.use('/tasks', taskRoutes);  // Task management routes
+app.use('/dashboard', dashboardRoutes);  // Dashboard layout routes
 
 app.get('/', (req, res) => {
   res.json({ message: 'Zenith Tasker API is running' });

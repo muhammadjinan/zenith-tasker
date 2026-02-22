@@ -39,6 +39,7 @@ function Dashboard() {
     const { logout, user } = useAuth();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Handle URL parameters on mount
     useEffect(() => {
@@ -385,9 +386,23 @@ function Dashboard() {
                     setEditMode(false);
                 })}
                 tasks={tasks}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
             />
 
-            <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 p-6">
+            <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 p-4 lg:p-6">
+                {/* Mobile hamburger */}
+                {!sidebarOpen && (
+                    <button
+                        onClick={() => setSidebarOpen(true)}
+                        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 rounded-xl bg-slate-900/90 backdrop-blur border border-white/10 text-slate-400 hover:text-white hover:bg-slate-800 transition-all shadow-lg"
+                        aria-label="Open sidebar"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
+                )}
 
                 {/* TASKS VIEW */}
                 {activeView === 'tasks' && (
@@ -395,6 +410,7 @@ function Dashboard() {
                         pages={pages}
                         onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
                         externalFilter={taskFilter}
+                        autoAdd={searchParams.get('newTask') === 'true'}
                     />
                 )}
 
@@ -402,7 +418,7 @@ function Dashboard() {
                 {activeView === 'pages' && viewMode === 'list' && (
                     <div className="flex flex-col h-full">
                         {/* Header */}
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex justify-between items-center mb-6 pl-12 lg:pl-0">
                             <h1 className="text-3xl font-semibold text-white">{getPageTitle()}</h1>
                             <div className="flex items-center gap-3">
                                 {/* View Toggle */}
@@ -534,7 +550,7 @@ function Dashboard() {
                     <div className="flex flex-col h-full max-w-4xl mx-auto w-full bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
 
                         {/* Header */}
-                        <div className="px-8 pt-6 pb-4 flex justify-between items-center border-b border-white/5">
+                        <div className="px-4 sm:px-8 pt-6 pb-4 flex justify-between items-center border-b border-white/5 pl-12 lg:pl-8">
                             <div className="flex items-center gap-4">
                                 <button
                                     onClick={goBackToList}

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TaskCard from './TaskCard';
 import { useAuth } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-const TaskList = ({ pages, onSelectPage, externalFilter }) => {
+const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd }) => {
     const { user } = useAuth();
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -12,6 +12,15 @@ const TaskList = ({ pages, onSelectPage, externalFilter }) => {
     const [filter, setFilter] = useState(externalFilter || 'all'); // 'all', 'todo', 'in_progress', 'done', 'overdue'
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [isAddingTask, setIsAddingTask] = useState(false);
+    const [mobileKanbanColumn, setMobileKanbanColumn] = useState(null); // which status popup is open on mobile
+    const [activeCardIndex, setActiveCardIndex] = useState(0); // which card is on top in the 3D stack
+    const touchStartY = useRef(null);
+    const touchDelta = useRef(0);
+
+    // Auto-open add task form if requested
+    useEffect(() => {
+        if (autoAdd) setIsAddingTask(true);
+    }, [autoAdd]);
 
     // Sync with external filter when it changes
     useEffect(() => {
@@ -250,9 +259,9 @@ const TaskList = ({ pages, onSelectPage, externalFilter }) => {
     return (
         <div className="h-full flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pl-12 lg:pl-0">
                 <h2 className="text-2xl font-semibold text-white">Tasks</h2>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                     {/* View Toggle */}
                     <div className="flex bg-slate-800/50 rounded-lg p-1">
                         <button
@@ -355,103 +364,277 @@ const TaskList = ({ pages, onSelectPage, externalFilter }) => {
                     </div>
                 ) : (
                     /* Kanban View */
-                    <div className="grid grid-cols-4 gap-4 h-full">
-                        {/* Overdue Column */}
-                        <div className="bg-red-500/10 rounded-xl p-4 flex flex-col">
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                                <h3 className="font-medium text-red-300">Overdue</h3>
-                                <span className="ml-auto text-sm text-red-400">{tasksByStatus.overdue.length}</span>
+                    <>
+                        {/* ===== Desktop Kanban (lg+): existing 4-column grid ===== */}
+                        <div className="hidden lg:grid grid-cols-4 gap-4 h-full">
+                            {/* Overdue Column */}
+                            <div className="bg-red-500/10 rounded-xl p-4 flex flex-col">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                                    <h3 className="font-medium text-red-300">Overdue</h3>
+                                    <span className="ml-auto text-sm text-red-400">{tasksByStatus.overdue.length}</span>
+                                </div>
+                                <div className="flex-1 space-y-3 overflow-auto"
+                                    onDragOver={handleDragOver}
+                                    onDrop={(e) => handleDrop(e, 'todo')}
+                                >
+                                    {tasksByStatus.overdue.map(task => (
+                                        <TaskCard key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask}
+                                            onToggleSubtask={toggleSubtask} onAddSubtask={addSubtask} onDeleteSubtask={deleteSubtask}
+                                            pages={pages} showStatus={false} />
+                                    ))}
+                                </div>
                             </div>
-                            <div className="flex-1 space-y-3 overflow-auto">
-                                {tasksByStatus.overdue.map(task => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onUpdate={updateTask}
-                                        onDelete={deleteTask}
-                                        onToggleSubtask={toggleSubtask}
-                                        onAddSubtask={addSubtask}
-                                        onDeleteSubtask={deleteSubtask}
-                                        pages={pages}
-                                        showStatus={false}
-                                    />
-                                ))}
+                            {/* To Do Column */}
+                            <div className="bg-slate-800/30 rounded-xl p-4 flex flex-col"
+                                onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'todo')}
+                            >
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="w-3 h-3 rounded-full bg-slate-500"></span>
+                                    <h3 className="font-medium text-slate-300">To Do</h3>
+                                    <span className="ml-auto text-sm text-slate-500">{tasksByStatus.todo.length}</span>
+                                </div>
+                                <div className="flex-1 space-y-3 overflow-auto">
+                                    {tasksByStatus.todo.map(task => (
+                                        <TaskCard key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask}
+                                            onToggleSubtask={toggleSubtask} onAddSubtask={addSubtask} onDeleteSubtask={deleteSubtask}
+                                            pages={pages} showStatus={false} />
+                                    ))}
+                                </div>
+                            </div>
+                            {/* In Progress Column */}
+                            <div className="bg-blue-500/10 rounded-xl p-4 flex flex-col"
+                                onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'in_progress')}
+                            >
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                                    <h3 className="font-medium text-blue-300">In Progress</h3>
+                                    <span className="ml-auto text-sm text-blue-400">{tasksByStatus.in_progress.length}</span>
+                                </div>
+                                <div className="flex-1 space-y-3 overflow-auto">
+                                    {tasksByStatus.in_progress.map(task => (
+                                        <TaskCard key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask}
+                                            onToggleSubtask={toggleSubtask} onAddSubtask={addSubtask} onDeleteSubtask={deleteSubtask}
+                                            pages={pages} showStatus={false} />
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Done Column */}
+                            <div className="bg-green-500/10 rounded-xl p-4 flex flex-col"
+                                onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'done')}
+                            >
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                                    <h3 className="font-medium text-green-300">Done</h3>
+                                    <span className="ml-auto text-sm text-green-400">{tasksByStatus.done.length}</span>
+                                </div>
+                                <div className="flex-1 space-y-3 overflow-auto">
+                                    {tasksByStatus.done.map(task => (
+                                        <TaskCard key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask}
+                                            onToggleSubtask={toggleSubtask} onAddSubtask={addSubtask} onDeleteSubtask={deleteSubtask}
+                                            pages={pages} showStatus={false} />
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
-                        {/* To Do Column */}
-                        <div className="bg-slate-800/30 rounded-xl p-4 flex flex-col">
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="w-3 h-3 rounded-full bg-slate-500"></span>
-                                <h3 className="font-medium text-slate-300">To Do</h3>
-                                <span className="ml-auto text-sm text-slate-500">{tasksByStatus.todo.length}</span>
-                            </div>
-                            <div className="flex-1 space-y-3 overflow-auto">
-                                {tasksByStatus.todo.map(task => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onUpdate={updateTask}
-                                        onDelete={deleteTask}
-                                        onToggleSubtask={toggleSubtask}
-                                        onAddSubtask={addSubtask}
-                                        onDeleteSubtask={deleteSubtask}
-                                        pages={pages}
-                                        showStatus={false}
-                                    />
-                                ))}
-                            </div>
-                        </div>
+                        {/* ===== Mobile Kanban (< lg): 3D Card Stack ===== */}
+                        {(() => {
+                            const columns = [
+                                { key: 'overdue', label: 'Overdue', tasks: tasksByStatus.overdue, dotColor: 'bg-red-500', bgGradient: 'from-red-500/20 to-red-900/10', borderColor: 'border-red-500/30', textColor: 'text-red-300', countColor: 'text-red-400', previewColor: 'text-red-200/60', activeDot: 'bg-red-400' },
+                                { key: 'todo', label: 'To Do', tasks: tasksByStatus.todo, dotColor: 'bg-slate-400', bgGradient: 'from-slate-700/40 to-slate-800/30', borderColor: 'border-slate-500/30', textColor: 'text-slate-200', countColor: 'text-slate-400', previewColor: 'text-slate-300/60', activeDot: 'bg-slate-300' },
+                                { key: 'in_progress', label: 'In Progress', tasks: tasksByStatus.in_progress, dotColor: 'bg-blue-500', bgGradient: 'from-blue-500/20 to-blue-900/10', borderColor: 'border-blue-500/30', textColor: 'text-blue-200', countColor: 'text-blue-400', previewColor: 'text-blue-200/60', activeDot: 'bg-blue-400' },
+                                { key: 'done', label: 'Done', tasks: tasksByStatus.done, dotColor: 'bg-green-500', bgGradient: 'from-green-500/20 to-green-900/10', borderColor: 'border-green-500/30', textColor: 'text-green-200', countColor: 'text-green-400', previewColor: 'text-green-200/60', activeDot: 'bg-green-400' },
+                            ];
+                            const total = columns.length;
 
-                        {/* In Progress Column */}
-                        <div className="bg-blue-500/10 rounded-xl p-4 flex flex-col">
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                                <h3 className="font-medium text-blue-300">In Progress</h3>
-                                <span className="ml-auto text-sm text-blue-400">{tasksByStatus.in_progress.length}</span>
-                            </div>
-                            <div className="flex-1 space-y-3 overflow-auto">
-                                {tasksByStatus.in_progress.map(task => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onUpdate={updateTask}
-                                        onDelete={deleteTask}
-                                        onToggleSubtask={toggleSubtask}
-                                        onAddSubtask={addSubtask}
-                                        onDeleteSubtask={deleteSubtask}
-                                        pages={pages}
-                                        showStatus={false}
-                                    />
-                                ))}
-                            </div>
-                        </div>
+                            const handleTouchStart = (e) => {
+                                touchStartY.current = e.touches[0].clientY;
+                                touchDelta.current = 0;
+                            };
+                            const handleTouchMove = (e) => {
+                                if (touchStartY.current === null) return;
+                                touchDelta.current = e.touches[0].clientY - touchStartY.current;
+                            };
+                            const handleTouchEnd = () => {
+                                if (Math.abs(touchDelta.current) > 50) {
+                                    if (touchDelta.current < 0) {
+                                        // Swipe up → next card
+                                        setActiveCardIndex(prev => Math.min(prev + 1, total - 1));
+                                    } else {
+                                        // Swipe down → previous card
+                                        setActiveCardIndex(prev => Math.max(prev - 1, 0));
+                                    }
+                                }
+                                touchStartY.current = null;
+                                touchDelta.current = 0;
+                            };
 
-                        {/* Done Column */}
-                        <div className="bg-green-500/10 rounded-xl p-4 flex flex-col">
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                                <h3 className="font-medium text-green-300">Done</h3>
-                                <span className="ml-auto text-sm text-green-400">{tasksByStatus.done.length}</span>
-                            </div>
-                            <div className="flex-1 space-y-3 overflow-auto">
-                                {tasksByStatus.done.map(task => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onUpdate={updateTask}
-                                        onDelete={deleteTask}
-                                        onToggleSubtask={toggleSubtask}
-                                        onAddSubtask={addSubtask}
-                                        onDeleteSubtask={deleteSubtask}
-                                        pages={pages}
-                                        showStatus={false}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                            return (
+                                <div className="lg:hidden">
+                                    {/* 3D Card Stack */}
+                                    <div
+                                        className="relative mx-auto"
+                                        style={{ height: '320px', perspective: '1000px' }}
+                                        onTouchStart={handleTouchStart}
+                                        onTouchMove={handleTouchMove}
+                                        onTouchEnd={handleTouchEnd}
+                                    >
+                                        {columns.map((col, i) => {
+                                            // Calculate position relative to active card
+                                            const offset = i - activeCardIndex;
+                                            // Cards behind: shift down and scale smaller
+                                            const translateY = offset * 18;
+                                            const scale = 1 - Math.abs(offset) * 0.05;
+                                            const zIndex = total - Math.abs(offset);
+                                            const opacity = 1;
+                                            const blur = Math.abs(offset) > 0 ? Math.abs(offset) * 0.5 : 0;
+
+                                            return (
+                                                <div
+                                                    key={col.key}
+                                                    onClick={() => {
+                                                        if (offset === 0) setMobileKanbanColumn(col.key);
+                                                        else setActiveCardIndex(i);
+                                                    }}
+                                                    className={`
+                                                        absolute inset-x-0 mx-auto
+                                                        bg-gradient-to-br ${col.bgGradient} border ${col.borderColor}
+                                                        bg-slate-900/80 backdrop-blur-xl backdrop-saturate-150
+                                                        rounded-2xl p-5 cursor-pointer flex flex-col
+                                                        ${offset === 0 ? 'shadow-2xl ring-1 ring-white/10' : 'shadow-lg'}
+                                                    `}
+                                                    style={{
+                                                        height: '260px',
+                                                        zIndex,
+                                                        transform: `translateY(${translateY}px) scale(${scale})`,
+                                                        opacity,
+                                                        filter: blur > 0 ? `blur(${blur}px)` : 'none',
+                                                        transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease, filter 0.4s ease',
+                                                        pointerEvents: Math.abs(offset) > 1 ? 'none' : 'auto',
+                                                    }}
+                                                >
+                                                    {/* Status Header */}
+                                                    <div className="flex items-center gap-3 mb-4">
+                                                        <span className={`w-3.5 h-3.5 rounded-full ${col.dotColor} shadow-lg`}></span>
+                                                        <h3 className={`font-semibold text-lg ${col.textColor}`}>{col.label}</h3>
+                                                        <span className={`ml-auto text-2xl font-bold ${col.countColor}`}>{col.tasks.length}</span>
+                                                    </div>
+
+                                                    {/* Task Previews */}
+                                                    <div className="space-y-2 flex-1">
+                                                        {col.tasks.slice(0, 3).map(task => (
+                                                            <div key={task.id} className="flex items-center gap-2">
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${col.dotColor} opacity-60`}></span>
+                                                                <span className={`text-sm truncate ${col.previewColor}`}>{task.title}</span>
+                                                            </div>
+                                                        ))}
+                                                        {col.tasks.length > 3 && (
+                                                            <p className={`text-xs ${col.countColor} opacity-70 pl-3.5`}>
+                                                                +{col.tasks.length - 3} more...
+                                                            </p>
+                                                        )}
+                                                        {col.tasks.length === 0 && (
+                                                            <p className={`text-sm ${col.previewColor} italic`}>No tasks</p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Tap hint — only on active card */}
+                                                    {offset === 0 && (
+                                                        <div className={`flex items-center justify-center gap-1.5 text-xs ${col.countColor} opacity-60 pt-2 border-t border-white/5`}>
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                            </svg>
+                                                            Tap to view
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Navigation dots + swipe hint */}
+                                    <div className="flex flex-col items-center gap-3 mt-4">
+                                        <div className="flex gap-2">
+                                            {columns.map((col, i) => (
+                                                <button
+                                                    key={col.key}
+                                                    onClick={() => setActiveCardIndex(i)}
+                                                    className={`w-2 h-2 rounded-full transition-all duration-300 ${i === activeCardIndex
+                                                        ? `${col.activeDot} scale-125`
+                                                        : 'bg-slate-600 hover:bg-slate-500'
+                                                        }`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <p className="text-xs text-slate-500">Swipe up / down</p>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* ===== Mobile Kanban Popup ===== */}
+                        {mobileKanbanColumn && (() => {
+                            const colMeta = {
+                                overdue: { label: 'Overdue', tasks: tasksByStatus.overdue, dotColor: 'bg-red-500', textColor: 'text-red-300', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/30' },
+                                todo: { label: 'To Do', tasks: tasksByStatus.todo, dotColor: 'bg-slate-400', textColor: 'text-slate-200', bgColor: 'bg-slate-800/50', borderColor: 'border-slate-500/30' },
+                                in_progress: { label: 'In Progress', tasks: tasksByStatus.in_progress, dotColor: 'bg-blue-500', textColor: 'text-blue-200', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/30' },
+                                done: { label: 'Done', tasks: tasksByStatus.done, dotColor: 'bg-green-500', textColor: 'text-green-200', bgColor: 'bg-green-500/10', borderColor: 'border-green-500/30' },
+                            };
+                            const col = colMeta[mobileKanbanColumn];
+                            return (
+                                <div
+                                    className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+                                    onClick={() => setMobileKanbanColumn(null)}
+                                >
+                                    {/* Backdrop */}
+                                    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+
+                                    {/* Popup Panel */}
+                                    <div
+                                        className="relative z-10 w-full sm:max-w-lg max-h-[85vh] bg-slate-900/85 backdrop-blur-xl backdrop-saturate-150 border-t sm:border border-white/10 sm:rounded-2xl rounded-t-2xl shadow-2xl ring-1 ring-white/10 flex flex-col kanban-popup-enter"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {/* Popup Header */}
+                                        <div className={`flex items-center gap-3 px-5 py-4 border-b ${col.borderColor}`}>
+                                            <span className={`w-3 h-3 rounded-full ${col.dotColor}`}></span>
+                                            <h3 className={`font-semibold text-lg ${col.textColor} flex-1`}>{col.label}</h3>
+                                            <span className="text-sm text-slate-500">{col.tasks.length} tasks</span>
+                                            <button
+                                                onClick={() => setMobileKanbanColumn(null)}
+                                                className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+
+                                        {/* Popup Task List */}
+                                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                            {col.tasks.length === 0 ? (
+                                                <div className="text-center py-12 text-slate-500">
+                                                    <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                                    </svg>
+                                                    <p className="text-sm">No tasks in this column</p>
+                                                </div>
+                                            ) : (
+                                                col.tasks.map(task => (
+                                                    <TaskCard
+                                                        key={task.id} task={task} onUpdate={updateTask} onDelete={deleteTask}
+                                                        onToggleSubtask={toggleSubtask} onAddSubtask={addSubtask} onDeleteSubtask={deleteSubtask}
+                                                        pages={pages} showStatus={false}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </>
                 )}
             </div>
         </div>
