@@ -11,6 +11,7 @@ A modern, full-stack productivity application for managing tasks and notes with 
 
 - 📝 **Page Management** - Create, edit, and organize pages with drag-and-drop reordering
 - ✅ **Task Tracking** - Manage tasks with status updates and controls
+- 💵 **Finance Tracking** - Gives a complete visibility over your personal, business, family, or shared project finances.
 - 🔐 **Authentication** - Secure login with email/password and Google OAuth
 - 📧 **Password Reset** - Email-based password recovery via SMTP
 - 📤 **Export Options** - Export pages to PDF and DOCX formats
