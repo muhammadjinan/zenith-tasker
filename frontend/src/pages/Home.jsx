@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import Sidebar from '../components/Sidebar';
 import ParticleBackground from '../components/ParticleBackground';
 import TaskCalendar from '../components/TaskCalendar';
 import WidgetWrapper from '../components/widgets/WidgetWrapper';
 import WidgetToolbar from '../components/widgets/WidgetToolbar';
+import SearchModal from '../components/SearchModal';
 import { useAuth } from '../context/AuthContext';
+import DynamicFinanceWidget from '../components/widgets/DynamicFinanceWidget';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -26,6 +29,7 @@ const WIDGET_DEFS = [
     { id: 'recentPages', name: 'Recent Pages', minW: 3, minH: 3, defaultW: 6, defaultH: 5, adminOnly: false },
     { id: 'pendingTasks', name: 'Pending Tasks', minW: 3, minH: 3, defaultW: 6, defaultH: 5, adminOnly: false },
     { id: 'calendar', name: 'Task Calendar', minW: 4, minH: 4, defaultW: 12, defaultH: 7, adminOnly: false },
+    { id: 'financeChart', name: 'Finance Chart', minW: 3, minH: 3, defaultW: 6, defaultH: 5, adminOnly: false, allowMultiple: true },
     { id: 'userActivity', name: 'User Activity', minW: 4, minH: 3, defaultW: 12, defaultH: 6, adminOnly: true },
 ];
 
@@ -35,19 +39,42 @@ const WIDGET_ICONS = {
     recentPages: <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
     pendingTasks: <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>,
     calendar: <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
+    financeChart: <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>,
     userActivity: <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>,
 };
 
-const getDefaultLayout = (isAdmin) => {
+const WIDGET_NAMES = {
+    stats: 'Stats',
+    quickActions: 'Quick Actions',
+    recentPages: 'Recent Pages',
+    pendingTasks: 'Pending Tasks',
+    calendar: 'Calendar',
+    financeChart: 'Finance Chart',
+    userActivity: 'User Activity',
+};
+
+const getDefaultLayout = (user) => {
     const layout = [
         { i: 'quickActions', x: 0, y: 0, w: 4, h: 2 },
         { i: 'stats', x: 4, y: 0, w: 8, h: 3 },
-        { i: 'calendar', x: 0, y: 2, w: 4, h: 6 },
-        { i: 'pendingTasks', x: 4, y: 3, w: 4, h: 5 },
-        { i: 'recentPages', x: 8, y: 3, w: 4, h: 5 },
     ];
-    if (isAdmin) {
-        layout.push({ i: 'userActivity', x: 0, y: 8, w: 12, h: 6 });
+    let nextY = 2; // Keep track of rows to smartly place items
+
+    // Add task-related widgets if they have permission
+    if (user?.is_admin || user?.can_view_tasks) {
+        layout.push({ i: 'calendar', x: 0, y: nextY, w: 4, h: 6 });
+        layout.push({ i: 'pendingTasks', x: 4, y: 3, w: 4, h: 5 });
+        nextY += 6; // Move down below calendar
+    }
+
+    // Add page-related widgets if they have permission
+    // If tasks are present, it places next to pendingTasks. Otherwise, positions it smartly
+    if (user?.is_admin || user?.can_view_pages) {
+        layout.push({ i: 'recentPages', x: 8, y: 3, w: 4, h: 5 });
+    }
+
+    if (user?.is_admin) {
+        layout.push({ i: 'userActivity', x: 0, y: Math.max(8, nextY), w: 12, h: 6 });
     }
     return layout;
 };
@@ -83,12 +110,61 @@ const BADGE_COLORS = {
     slate: 'bg-slate-500/15 text-slate-500 border-slate-500/30',
 };
 
-// ============ Main Component ============
+const FinanceModalForm = ({ trackers, onClose, onSubmit }) => {
+    const [selectedTracker, setSelectedTracker] = useState('all');
+    const [title, setTitle] = useState('');
+    const [chartType, setChartType] = useState('overview');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSubmit({ targetTracker: selectedTracker, chartType, title });
+    };
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+                <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center">
+                    <h2 className="text-lg font-semibold text-white">Configure Finance Widget</h2>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1.5">Widget Title <span className="text-slate-500 font-normal">(Optional)</span></label>
+                        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Leave blank for default" className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1.5">Target Tracker</label>
+                        <select value={selectedTracker} onChange={(e) => setSelectedTracker(e.target.value)} className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+                            <option value="all">All Trackers Combined</option>
+                            {trackers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-1.5">Chart Type</label>
+                        <select value={chartType} onChange={(e) => setChartType(e.target.value)} className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+                            <option value="overview">Income vs Expense (Pie)</option>
+                            <option value="expense">Expense Breakdown (Pie)</option>
+                            <option value="income">Income Breakdown (Pie)</option>
+                            <option value="trend">Income vs Expense (Trend Graph)</option>
+                        </select>
+                    </div>
+                    <div className="flex gap-3 pt-4">
+                        <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:bg-slate-800 transition-colors font-medium">Cancel</button>
+                        <button type="submit" className="flex-1 px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white transition-colors font-medium">Add Widget</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 function Home() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [pages, setPages] = useState([]);
     const [tasks, setTasks] = useState([]);
+    const [trackers, setTrackers] = useState([]);
+    const [financeModalOpen, setFinanceModalOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [adminUsers, setAdminUsers] = useState([]);
     const [editMode, setEditMode] = useState(false);
@@ -96,6 +172,7 @@ function Home() {
     const [hiddenWidgets, setHiddenWidgets] = useState([]);
     const [layoutLoaded, setLayoutLoaded] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [showSearch, setShowSearch] = useState(false);
     const saveTimeoutRef = useRef(null);
     const isResettingRef = useRef(false);
 
@@ -108,18 +185,36 @@ function Home() {
         return fetch(url, { ...options, headers });
     }, [user?.token]);
 
+    // Ctrl+K to open search
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                setShowSearch(prev => !prev);
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     // Fetch data on load
     useEffect(() => {
         if (!user?.token) return;
         const fetchData = async () => {
             setLoading(true);
             try {
-                const [pagesRes, tasksRes] = await Promise.all([
+                const [pagesRes, tasksRes, financeRes] = await Promise.all([
                     authenticatedFetch(`${API_URL}/pages`),
                     authenticatedFetch(`${API_URL}/tasks`),
+                    authenticatedFetch(`${API_URL}/finance`)
                 ]);
                 if (pagesRes.ok) { const d = await pagesRes.json(); if (Array.isArray(d)) setPages(d); }
                 if (tasksRes.ok) { const d = await tasksRes.json(); if (Array.isArray(d)) setTasks(d); }
+                if (financeRes.ok) {
+                    const d = await financeRes.json();
+                    if (d.trackers && Array.isArray(d.trackers)) setTrackers(d.trackers);
+                    else if (Array.isArray(d)) setTrackers(d);
+                }
             } catch (err) {
                 console.error('Failed to fetch data:', err);
             } finally { setLoading(false); }
@@ -151,14 +246,14 @@ function Home() {
                         setLayouts({ lg: data.layout });
                         setHiddenWidgets(data.hidden_widgets || []);
                     } else {
-                        setLayouts({ lg: getDefaultLayout(user?.is_admin) });
+                        setLayouts({ lg: getDefaultLayout(user) });
                     }
                 } else {
-                    setLayouts({ lg: getDefaultLayout(user?.is_admin) });
+                    setLayouts({ lg: getDefaultLayout(user) });
                 }
             } catch (err) {
                 console.error('Failed to load layout:', err);
-                setLayouts({ lg: getDefaultLayout(user?.is_admin) });
+                setLayouts({ lg: getDefaultLayout(user) });
             }
             setLayoutLoaded(true);
         };
@@ -180,9 +275,17 @@ function Home() {
 
     const handleLayoutChange = (currentLayout, allLayouts) => {
         if (isResettingRef.current) return;
-        setLayouts(allLayouts);
+
+        // Preserve missing config from react-grid-layout strip
+        const preservedLayout = currentLayout.map(item => {
+            const oldItem = (layouts.lg || []).find(l => l.i === item.i);
+            return oldItem ? { ...item, config: oldItem.config } : item;
+        });
+
+        // Use preservedLayout instead of currentLayout
+        setLayouts({ ...allLayouts, lg: preservedLayout });
         if (layoutLoaded) {
-            saveLayout(currentLayout, hiddenWidgets);
+            saveLayout(preservedLayout, hiddenWidgets);
         }
     };
 
@@ -196,6 +299,11 @@ function Home() {
     };
 
     const addWidget = (widgetId) => {
+        if (widgetId === 'financeChart') {
+            setFinanceModalOpen(true);
+            return;
+        }
+
         const def = WIDGET_DEFS.find(w => w.id === widgetId);
         if (!def) return;
         const newHidden = hiddenWidgets.filter(h => h !== widgetId);
@@ -250,9 +358,16 @@ function Home() {
     }, [adminUsers]);
 
     // Navigation handlers
-    const handleNavigateToPages = () => navigate('/dashboard?view=pages');
-    const handleNavigateToTasks = () => navigate('/dashboard?view=tasks');
+    const handleNavigateToPages = () => {
+        if (!user?.is_admin && !user?.can_view_pages) return;
+        navigate('/dashboard?view=pages');
+    };
+    const handleNavigateToTasks = () => {
+        if (!user?.is_admin && !user?.can_view_tasks) return;
+        navigate('/dashboard?view=tasks');
+    };
     const handleCreatePage = async () => {
+        if (!user?.is_admin && !user?.can_view_pages) return;
         try {
             const res = await authenticatedFetch(`${API_URL}/pages`, { method: 'POST' });
             if (res.ok) {
@@ -283,7 +398,17 @@ function Home() {
     const addableWidgets = WIDGET_DEFS
         .filter(w => {
             if (w.adminOnly && !user?.is_admin) return false;
-            return hiddenWidgets.includes(w.id);
+            // Feature Flags for specific widgets (do not show if they DON'T have permission AND aren't admin)
+            if (w.id === 'financeChart' && !user?.is_admin && !user?.can_view_finance) return false;
+            if (w.id === 'pendingTasks' && !user?.is_admin && !user?.can_view_tasks) return false;
+            if (w.id === 'recentPages' && !user?.is_admin && !user?.can_view_pages) return false;
+            if (w.id === 'calendar' && !user?.is_admin && !user?.can_view_tasks) return false;
+
+            if (w.allowMultiple) return true;
+
+            // For standard singular widgets, they are addable if they are NOT currently in the active layout
+            const isInLayout = (layouts.lg || []).some(item => item.i === w.id);
+            return !isInLayout;
         })
         .map(w => ({ id: w.id, name: w.name, icon: WIDGET_ICONS[w.id] }));
 
@@ -410,22 +535,30 @@ function Home() {
 
     const renderQuickActions = () => (
         <div className="flex flex-wrap gap-3">
-            <button onClick={handleCreatePage} className="px-4 py-2.5 rounded-xl font-medium bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 text-sm">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                New Page
-            </button>
-            <button onClick={() => navigate('/dashboard?view=tasks&newTask=true')} className="px-4 py-2.5 rounded-xl font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 text-sm">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                New Task
-            </button>
-            <button onClick={handleNavigateToPages} className="px-4 py-2.5 rounded-xl font-medium bg-slate-800/80 hover:bg-slate-700/80 text-white border border-white/10 hover:border-cyan-500/30 transition-all flex items-center gap-2 text-sm">
-                <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                All Pages
-            </button>
-            <button onClick={handleNavigateToTasks} className="px-4 py-2.5 rounded-xl font-medium bg-slate-800/80 hover:bg-slate-700/80 text-white border border-white/10 hover:border-purple-500/30 transition-all flex items-center gap-2 text-sm">
-                <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
-                All Tasks
-            </button>
+            {(user?.is_admin || user?.can_view_pages) && (
+                <>
+                    <button onClick={handleCreatePage} className="px-4 py-2.5 rounded-xl font-medium bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 text-sm">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        New Page
+                    </button>
+                    <button onClick={handleNavigateToPages} className="px-4 py-2.5 rounded-xl font-medium bg-slate-800/80 hover:bg-slate-700/80 text-white border border-white/10 hover:border-cyan-500/30 transition-all flex items-center gap-2 text-sm">
+                        <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        All Pages
+                    </button>
+                </>
+            )}
+            {(user?.is_admin || user?.can_view_tasks) && (
+                <>
+                    <button onClick={() => navigate('/dashboard?view=tasks&newTask=true')} className="px-4 py-2.5 rounded-xl font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2 text-sm">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        New Task
+                    </button>
+                    <button onClick={handleNavigateToTasks} className="px-4 py-2.5 rounded-xl font-medium bg-slate-800/80 hover:bg-slate-700/80 text-white border border-white/10 hover:border-purple-500/30 transition-all flex items-center gap-2 text-sm">
+                        <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                        All Tasks
+                    </button>
+                </>
+            )}
         </div>
     );
 
@@ -474,6 +607,60 @@ function Home() {
     const renderCalendar = () => (
         <TaskCalendar tasks={tasks} onTaskClick={handleNavigateToTasks} embedded />
     );
+
+    const renderFinanceModal = () => {
+        if (!financeModalOpen) return null;
+        return (
+            <FinanceModalForm
+                trackers={trackers}
+                onClose={() => setFinanceModalOpen(false)}
+                onSubmit={(config) => {
+                    const newId = `financeChart_${Date.now()}`;
+                    const def = WIDGET_DEFS.find(w => w.id === 'financeChart');
+                    const currentLg = layouts.lg || [];
+                    const maxY = currentLg.reduce((max, l) => Math.max(max, l.y + l.h), 0);
+                    const newItem = { i: newId, x: 0, y: maxY, w: def.defaultW, h: def.defaultH, config };
+
+                    // No need to hide the definition from the toolbar, it allows multiple
+                    const newLayout = [...currentLg, newItem];
+                    setLayouts({ ...layouts, lg: newLayout });
+                    saveLayout(newLayout, hiddenWidgets);
+                    setFinanceModalOpen(false);
+                }}
+            />
+        );
+    };
+
+    const renderedWidgets = (layouts.lg || []).map(layoutItem => {
+        const baseId = layoutItem.i.split('_')[0];
+        const def = WIDGET_DEFS.find(w => w.id === baseId);
+        if (!def) return null;
+        if (def.adminOnly && !user?.is_admin) return null;
+
+        // Block rendering of widgets if the user lacks the specific roles
+        if (baseId === 'financeChart' && !user?.is_admin && !user?.can_view_finance) return null;
+        if (baseId === 'pendingTasks' && !user?.is_admin && !user?.can_view_tasks) return null;
+        if (baseId === 'recentPages' && !user?.is_admin && !user?.can_view_pages) return null;
+        if (baseId === 'calendar' && !user?.is_admin && !user?.can_view_tasks) return null;
+
+        // If it's a singleton and it's hidden, don't render it
+        if (!def.allowMultiple && hiddenWidgets.includes(baseId)) return null;
+
+        let resolvedTitle = layoutItem.config?.title?.trim() || WIDGET_NAMES[baseId];
+        let resolvedIcon = WIDGET_ICONS[baseId];
+
+        if (baseId === 'financeChart') {
+            const tracker = trackers.find(t => t.id === layoutItem.config?.targetTracker);
+            if (tracker?.icon) resolvedIcon = <span className="text-base leading-none">{tracker.icon}</span>;
+
+            if (!layoutItem.config?.title?.trim()) {
+                const typeLabels = { overview: "Overview Pie", expense: "Exp Pie", income: "Inc Pie", trend: "Trend" };
+                resolvedTitle = tracker ? `${typeLabels[layoutItem.config?.chartType] || 'Finance'} (${tracker.name})` : `${typeLabels[layoutItem.config?.chartType] || 'Finance'} (All)`;
+            }
+        }
+
+        return { ...def, instanceId: layoutItem.i, config: layoutItem.config, resolvedTitle, resolvedIcon };
+    }).filter(Boolean);
 
     const renderUserActivity = () => (
         <div>
@@ -545,21 +732,13 @@ function Home() {
         userActivity: renderUserActivity,
     };
 
-    const WIDGET_NAMES = {
-        stats: 'Stats',
-        quickActions: 'Quick Actions',
-        recentPages: 'Recent Pages',
-        pendingTasks: 'Pending Tasks',
-        calendar: 'Calendar',
-        userActivity: 'User Activity',
-    };
-
     return (
         <div className="flex min-h-screen w-full bg-slate-950 text-slate-100 overflow-hidden relative">
             <ParticleBackground />
 
             <Sidebar
                 pages={pages}
+                financeTrackersCount={trackers.length}
                 onCreatePage={handleCreatePage}
                 activePageId={null}
                 onSelectPage={(pageId) => navigate(`/dashboard?view=pages&page=${pageId}`)}
@@ -572,12 +751,15 @@ function Home() {
                     if (view === 'home') navigate('/');
                     else if (view === 'pages') handleNavigateToPages();
                     else if (view === 'tasks') handleNavigateToTasks();
+                    else if (view === 'finance') navigate('/dashboard?view=finance');
+                    else if (view === 'articles') navigate('/dashboard?view=articles');
                 }}
                 onTaskFilterChange={(filter) => navigate(`/dashboard?view=tasks&filter=${filter}`)}
                 onPagesFilterChange={(filter) => navigate(`/dashboard?view=pages&pagesFilter=${filter}`)}
                 tasks={tasks}
                 isOpen={sidebarOpen}
                 onClose={() => setSidebarOpen(false)}
+                onOpenSearch={() => setShowSearch(true)}
             />
 
             <main className="flex-1 flex flex-col h-screen overflow-y-auto relative z-10 p-4 lg:p-6">
@@ -607,13 +789,26 @@ function Home() {
                                 </h1>
                                 <p className="text-slate-400">Here's what's happening with your workspace today.</p>
                             </div>
-                            <WidgetToolbar
-                                editMode={editMode}
-                                onToggleEditMode={() => setEditMode(!editMode)}
-                                onResetLayout={resetLayout}
-                                availableWidgets={addableWidgets}
-                                onAddWidget={addWidget}
-                            />
+                            <div className="flex items-center gap-3">
+                                {/* Search Bar */}
+                                <button
+                                    onClick={() => setShowSearch(true)}
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/50 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all cursor-pointer"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <span className="text-sm">Search...</span>
+                                    <kbd className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-500 border border-white/10">Ctrl+K</kbd>
+                                </button>
+                                <WidgetToolbar
+                                    editMode={editMode}
+                                    onToggleEditMode={() => setEditMode(!editMode)}
+                                    onResetLayout={resetLayout}
+                                    availableWidgets={addableWidgets}
+                                    onAddWidget={addWidget}
+                                />
+                            </div>
                         </div>
 
                         {/* Grid Layout */}
@@ -633,17 +828,19 @@ function Home() {
                                 useCSSTransforms={true}
                                 compactType="vertical"
                             >
-                                {visibleWidgets.map(widget => (
-                                    <div key={widget.id}>
+                                {renderedWidgets.map(widget => (
+                                    <div key={widget.instanceId}>
                                         <WidgetWrapper
-                                            title={WIDGET_NAMES[widget.id]}
-                                            icon={WIDGET_ICONS[widget.id]}
+                                            title={widget.resolvedTitle}
+                                            icon={widget.resolvedIcon}
                                             editMode={editMode}
-                                            onRemove={() => removeWidget(widget.id)}
+                                            onRemove={() => removeWidget(widget.instanceId)}
                                             badge={widget.adminOnly ? 'Admin' : null}
                                             headerActions={widget.id === 'stats' ? statsHeaderActions : null}
                                         >
-                                            {WIDGET_RENDERERS[widget.id]?.()}
+                                            {widget.id === 'financeChart' ? (
+                                                <DynamicFinanceWidget config={widget.config} authFetch={authenticatedFetch} apiUrl={API_URL} />
+                                            ) : WIDGET_RENDERERS[widget.id]?.()}
                                         </WidgetWrapper>
                                     </div>
                                 ))}
@@ -652,6 +849,17 @@ function Home() {
                     </div>
                 )}
             </main>
+
+            {renderFinanceModal()}
+
+            {/* Global Search Modal */}
+            <SearchModal
+                isOpen={showSearch}
+                onClose={() => setShowSearch(false)}
+                onSelectPage={(pageId) => navigate(`/dashboard?view=pages&page=${pageId}`)}
+                onSelectTask={(task) => navigate('/dashboard?view=tasks')}
+                defaultScope="all"
+            />
         </div>
     );
 }

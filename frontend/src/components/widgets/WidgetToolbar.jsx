@@ -16,14 +16,14 @@ const WidgetToolbar = ({ editMode, onToggleEditMode, onResetLayout, availableWid
     }, []);
 
     return (
-        <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
                 {/* Edit Mode Toggle */}
                 <button
                     onClick={onToggleEditMode}
                     className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-all ${editMode
-                            ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
-                            : 'bg-slate-800/80 text-slate-400 hover:text-white border border-white/10 hover:border-white/20'
+                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                        : 'bg-slate-800/80 text-slate-400 hover:text-white border border-white/10 hover:border-white/20'
                         }`}
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

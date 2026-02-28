@@ -5,6 +5,13 @@ import 'react-quill/dist/quill.snow.css';
 import Sidebar from '../components/Sidebar';
 import ParticleBackground from '../components/ParticleBackground';
 import TaskList from '../components/TaskList';
+import DatabaseView from '../components/DatabaseView';
+import FinanceTracker from '../components/finance/FinanceTracker';
+import KnowledgeBase from '../components/knowledge/KnowledgeBase';
+
+import SearchModal from '../components/SearchModal';
+import TagManager from '../components/TagManager';
+import CommentsSection from '../components/CommentsSection';
 import { useAuth } from '../context/AuthContext';
 import DOMPurify from 'dompurify';
 import html2pdf from 'html2pdf.js';
@@ -30,29 +37,84 @@ function Dashboard() {
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false); // Track unsaved changes
     const [saveSuccess, setSaveSuccess] = useState(false); // Show save feedback
-    const [activeView, setActiveView] = useState('pages'); // 'pages' | 'tasks'
-    const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'todo' | 'inprogress' | 'done' | 'overdue'
+    const [activeView, setActiveView] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        const view = params.get('view');
+        // Let useEffect handle security redirects, just set initial string to avoid flash
+        return ['tasks', 'finance', 'pages', 'articles'].includes(view) ? view : 'pages';
+    }); // 'pages' | 'tasks' | 'finance' | 'articles'
+    const [taskFilter, setTaskFilter] = useState(() => new URLSearchParams(window.location.search).get('filter') || 'all'); // 'all' | 'todo' | 'inprogress' | 'done' | 'overdue'
     const [pagesFilter, setPagesFilter] = useState('all'); // 'all' | 'recent' | 'favorites'
     const [tasks, setTasks] = useState([]); // For sidebar counts
+    const [financeTrackersCount, setFinanceTrackersCount] = useState(0); // For sidebar counts
     const [showUnsavedModal, setShowUnsavedModal] = useState(false); // Unsaved changes warning
     const [pendingNavigation, setPendingNavigation] = useState(null); // Store pending navigation action
+    const [breadcrumbs, setBreadcrumbs] = useState([]); // Breadcrumb trail
     const { logout, user } = useAuth();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
-    // Handle URL parameters on mount
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchScope, setSearchScope] = useState('all');
+
+    // Ctrl+K to open search — defaults to current section
     useEffect(() => {
-        const view = searchParams.get('view');
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                setSearchScope(['pages', 'tasks'].includes(activeView) ? activeView : 'all');
+                setShowSearch(prev => !prev);
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [activeView]);
+
+    // Handle URL parameters and enforce access rights on mount/change
+    useEffect(() => {
+        if (!user) return; // Wait for user info to load
+
+        let targetView = searchParams.get('view');
         const pageId = searchParams.get('page');
         const edit = searchParams.get('edit');
         const filter = searchParams.get('filter');
         const pagesFilterParam = searchParams.get('pagesFilter');
+        let needsUrlRewrite = false;
 
-        if (view === 'tasks') {
+        const getFallbackView = () => {
+            if (user?.is_admin) return 'pages';
+            if (user?.can_view_pages) return 'pages';
+            if (user?.can_view_tasks) return 'tasks';
+            if (user?.can_view_finance) return 'finance';
+            return 'articles'; // Everyone can view articles by default
+        };
+
+        const validViews = ['pages', 'tasks', 'finance', 'articles'];
+
+        const isViewAuthorized = (v) => {
+            if (user?.is_admin) return true;
+            if (v === 'tasks' && !user.can_view_tasks) return false;
+            if (v === 'finance' && !user.can_view_finance) return false;
+            if (v === 'pages' && !user.can_view_pages) return false;
+            return validViews.includes(v);
+        };
+
+        // If no view is provided, or it's invalid, or it's unauthorized, push to fallback
+        if (!targetView || !validViews.includes(targetView) || !isViewAuthorized(targetView)) {
+            // First time trying to access an invalid page. Route them to their highest priority allowed viewing area.
+            targetView = getFallbackView();
+            needsUrlRewrite = true;
+        }
+
+        if (targetView === 'tasks') {
             setActiveView('tasks');
             if (filter) setTaskFilter(filter);
-        } else if (view === 'pages' || pageId) {
+        } else if (targetView === 'finance') {
+            setActiveView('finance');
+        } else if (targetView === 'articles') {
+            setActiveView('articles');
+        } else if (targetView === 'pages' || pageId) {
             setActiveView('pages');
             if (pagesFilterParam) setPagesFilter(pagesFilterParam);
             if (pageId) {
@@ -62,7 +124,28 @@ function Dashboard() {
                 if (edit === 'true') setEditMode(true);
             }
         }
-    }, [searchParams]);
+
+        if (needsUrlRewrite) {
+            const newParams = new URLSearchParams(searchParams);
+            newParams.set('view', targetView);
+            setSearchParams(newParams, { replace: true });
+        }
+    }, [searchParams, user, setSearchParams]);
+
+    // Sync activeView changes back to the URL seamlessly
+    useEffect(() => {
+        if (!activeView) return;
+        const currentParams = new URLSearchParams(searchParams);
+        if (currentParams.get('view') !== activeView) {
+            currentParams.set('view', activeView);
+            // If navigating away from a specific page, clean up page-specific params
+            if (activeView !== 'pages') {
+                currentParams.delete('page');
+                currentParams.delete('edit');
+            }
+            setSearchParams(currentParams, { replace: true });
+        }
+    }, [activeView, searchParams, setSearchParams]);
 
     const authenticatedFetch = useCallback(async (url, options = {}) => {
         const headers = {
@@ -114,11 +197,8 @@ function Dashboard() {
         }
     }, [user?.token, authenticatedFetch]);
 
-    // Fetch pages and tasks on load
-    useEffect(() => {
+    const refreshSidebarCounts = useCallback(() => {
         if (!user?.token) return;
-
-        fetchPages();
 
         // Fetch tasks for sidebar counts
         authenticatedFetch(`${API_URL}/tasks`)
@@ -132,6 +212,28 @@ function Dashboard() {
                 }
             })
             .catch(err => console.error('Failed to fetch tasks:', err));
+
+        // Fetch finance trackers for sidebar counts
+        authenticatedFetch(`${API_URL}/finance`)
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to fetch finance trackers');
+                return res.json();
+            })
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setFinanceTrackersCount(data.length);
+                }
+            })
+            .catch(err => console.error('Failed to fetch finance trackers:', err));
+    }, [user?.token, authenticatedFetch]);
+
+    // Fetch pages and tasks on load
+    useEffect(() => {
+        if (!user?.token) return;
+
+        fetchPages();
+
+        refreshSidebarCounts();
     }, [user?.token, authenticatedFetch, fetchPages]);
 
     const activePage = pages.find(p => p.id === activePageId);
@@ -167,6 +269,23 @@ function Dashboard() {
         setActivePageId(pageId);
         setViewMode('page');
         setEditMode(false);
+        // Fetch breadcrumbs
+        fetchBreadcrumbs(pageId);
+    };
+
+    // Fetch breadcrumb trail for a page
+    const fetchBreadcrumbs = async (pageId) => {
+        if (!pageId) { setBreadcrumbs([]); return; }
+        try {
+            const res = await authenticatedFetch(`${API_URL}/pages/${pageId}/breadcrumb`);
+            if (res.ok) {
+                const data = await res.json();
+                setBreadcrumbs(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch breadcrumbs:', err);
+            setBreadcrumbs([]);
+        }
     };
 
     // Go back to list
@@ -189,10 +308,16 @@ function Dashboard() {
         setEditMode(!editMode);
     };
 
-    // Create new page
-    const createNewPage = async () => {
+    // Create new page (optionally as a sub-page)
+    const createNewPage = async (parentId = null) => {
         try {
-            const res = await authenticatedFetch(`${API_URL}/pages`, { method: 'POST' });
+            // If parentId is an event object (e.g. from onClick), ignore it
+            const actualParentId = (parentId && typeof parentId !== 'object') ? parentId : null;
+            const body = actualParentId ? { parent_id: actualParentId } : {};
+            const res = await authenticatedFetch(`${API_URL}/pages`, {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
             if (!res.ok) throw new Error('Failed to create page');
             const newPage = await res.json();
             setPages(prev => [...prev, newPage]);
@@ -200,9 +325,15 @@ function Dashboard() {
             setActivePageId(newPage.id);
             setViewMode('page');
             setEditMode(true);
+            fetchBreadcrumbs(newPage.id);
         } catch (err) {
             console.error('Failed to create page:', err);
         }
+    };
+
+    // Create sub-page (called from sidebar tree)
+    const createSubPage = async (parentId) => {
+        await createNewPage(parentId);
     };
 
     // Delete page
@@ -354,7 +485,8 @@ function Dashboard() {
 
             <Sidebar
                 pages={pages}
-                onCreatePage={createNewPage}
+                onCreatePage={() => createNewPage()}
+                onCreateSubPage={createSubPage}
                 activePageId={activePageId}
                 onSelectPage={(pageId) => handleNavigation(() => { setActiveView('pages'); openPage(pageId); })}
                 onDeletePage={deletePage}
@@ -386,8 +518,10 @@ function Dashboard() {
                     setEditMode(false);
                 })}
                 tasks={tasks}
+                financeTrackersCount={financeTrackersCount}
                 isOpen={sidebarOpen}
                 onClose={() => setSidebarOpen(false)}
+                onOpenSearch={() => { setSearchScope('all'); setShowSearch(true); }}
             />
 
             <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 p-4 lg:p-6">
@@ -404,14 +538,30 @@ function Dashboard() {
                     </button>
                 )}
 
+                {/* FINANCE VIEW */}
+                {activeView === 'finance' && (
+                    <FinanceTracker onUpdateCounts={refreshSidebarCounts} />
+                )}
+
                 {/* TASKS VIEW */}
                 {activeView === 'tasks' && (
-                    <TaskList
-                        pages={pages}
-                        onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
-                        externalFilter={taskFilter}
-                        autoAdd={searchParams.get('newTask') === 'true'}
-                    />
+                    <div className="flex flex-col h-full">
+                        <TaskList
+                            pages={pages}
+                            onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
+                            externalFilter={taskFilter}
+                            autoAdd={searchParams.get('newTask') === 'true'}
+                            onOpenSearch={() => { setSearchScope('tasks'); setShowSearch(true); }}
+                            onUpdateCounts={refreshSidebarCounts}
+                        />
+                    </div>
+                )}
+
+                {/* KNOWLEDGE BASE VIEW */}
+                {activeView === 'articles' && (
+                    <div className="flex flex-col h-full">
+                        <KnowledgeBase onUpdateCounts={refreshSidebarCounts} />
+                    </div>
                 )}
 
                 {/* LIST VIEW (Pages) */}
@@ -421,6 +571,17 @@ function Dashboard() {
                         <div className="flex justify-between items-center mb-6 pl-12 lg:pl-0">
                             <h1 className="text-3xl font-semibold text-white">{getPageTitle()}</h1>
                             <div className="flex items-center gap-3">
+                                {/* Search Bar */}
+                                <button
+                                    onClick={() => { setSearchScope('pages'); setShowSearch(true); }}
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/50 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all cursor-pointer"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <span className="text-sm">Search...</span>
+                                    <kbd className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-500 border border-white/10">Ctrl+K</kbd>
+                                </button>
                                 {/* View Toggle */}
                                 <div className="flex bg-slate-800/50 rounded-lg p-1 border border-white/10">
                                     <button
@@ -456,6 +617,21 @@ function Dashboard() {
                                     New Page
                                 </button>
                             </div>
+                        </div>
+
+                        {/* Page Filter Pills */}
+                        <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
+                            {[
+                                { id: 'all', label: 'All', icon: '📄', count: pages.length },
+                                { id: 'recent', label: 'Recent', icon: '🕐', count: Math.min(pages.length, 5) },
+                                { id: 'favorites', label: 'Favorites', icon: '⭐', count: pages.filter(p => p.is_favorite).length },
+                            ].map(f => (
+                                <button key={f.id} onClick={() => setPagesFilter(f.id)}
+                                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${pagesFilter === f.id ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}>
+                                    <span>{f.icon}</span>{f.label}
+                                    <span className={`text-[10px] ${pagesFilter === f.id ? 'text-cyan-400/70' : 'text-slate-600'}`}>{f.count}</span>
+                                </button>
+                            ))}
                         </div>
 
                         {/* Pages Grid/List */}
@@ -560,6 +736,26 @@ function Dashboard() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                                     </svg>
                                 </button>
+
+                                {/* Breadcrumbs */}
+                                {breadcrumbs.length > 1 && (
+                                    <div className="flex items-center gap-1 text-sm">
+                                        {breadcrumbs.map((crumb, i) => (
+                                            <React.Fragment key={crumb.id}>
+                                                {i > 0 && <span className="text-slate-600">/</span>}
+                                                {i < breadcrumbs.length - 1 ? (
+                                                    <button
+                                                        onClick={() => openPage(crumb.id)}
+                                                        className="text-slate-500 hover:text-cyan-400 transition-colors truncate max-w-[100px]"
+                                                    >
+                                                        {crumb.icon && <span className="mr-1">{crumb.icon}</span>}
+                                                        {crumb.title || 'Untitled'}
+                                                    </button>
+                                                ) : null}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
+                                )}
                                 {editMode ? (
                                     <input
                                         type="text"
@@ -607,14 +803,34 @@ function Dashboard() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                     </svg>
                                 </button>
-                                <div className="h-6 w-px bg-white/10 mx-2"></div>
                                 <button title="Export to PDF" onClick={handleExportPDF} className="p-2 text-slate-400 hover:text-white transition-colors">
                                     PDF
                                 </button>
                                 <button title="Export to Word" onClick={handleExportDOCX} className="p-2 text-slate-400 hover:text-white transition-colors">
                                     DOCX
                                 </button>
+
+                                {/* Delete Button */}
+                                <div className="h-6 w-px bg-white/10 mx-2"></div>
+                                <button
+                                    title="Delete Page"
+                                    onClick={() => {
+                                        if (window.confirm('Are you sure you want to delete this page? This action cannot be undone.')) {
+                                            deletePage(activePageId);
+                                        }
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-red-400 transition-colors"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
                             </div>
+                        </div>
+
+                        {/* Tags */}
+                        <div className="px-4 sm:px-8 py-2 border-b border-white/5">
+                            <TagManager pageId={activePageId} />
                         </div>
 
                         {/* Editor / Content */}
@@ -637,10 +853,20 @@ function Dashboard() {
                                     }}
                                 />
                             ) : (
-                                <div
-                                    className="p-8 content-view prose prose-invert max-w-none"
-                                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activePage.content || '<p class="text-slate-500">No content yet. Click Edit to start writing.</p>') }}
-                                />
+                                <>
+                                    <div
+                                        className="p-8 content-view prose prose-invert max-w-none"
+                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activePage.content || '<p class="text-slate-500">No content yet. Click Edit to start writing.</p>') }}
+                                    />
+                                    {/* Databases Section */}
+                                    <div className="px-8 pb-4">
+                                        <DatabaseView pageId={activePageId} />
+                                    </div>
+                                    {/* Comments Section */}
+                                    <div className="px-8 pb-8">
+                                        <CommentsSection pageId={activePageId} />
+                                    </div>
+                                </>
                             )}
                         </div>
                     </div>
@@ -648,44 +874,56 @@ function Dashboard() {
                 }
             </main >
 
+
+            {/* Global Search Modal */}
+            < SearchModal
+                isOpen={showSearch}
+                onClose={() => setShowSearch(false)}
+                onSelectPage={(pageId) => { setActiveView('pages'); openPage(pageId); }}
+                onSelectTask={(task) => { setActiveView('tasks'); setTaskFilter('all'); }}
+                defaultScope={searchScope}
+            />
+
             {/* Unsaved Changes Warning Modal */}
-            {showUnsavedModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
-                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
+            {
+                showUnsavedModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-lg font-semibold text-white">Unsaved Changes</h3>
                             </div>
-                            <h3 className="text-lg font-semibold text-white">Unsaved Changes</h3>
-                        </div>
-                        <p className="text-slate-400 mb-6">
-                            You have unsaved changes. Would you like to save them before leaving?
-                        </p>
-                        <div className="flex gap-3">
-                            <button
-                                onClick={handleSaveAndNavigate}
-                                className="flex-1 px-4 py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all font-medium"
-                            >
-                                Save & Leave
-                            </button>
-                            <button
-                                onClick={handleDiscardAndNavigate}
-                                className="flex-1 px-4 py-2.5 rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all font-medium"
-                            >
-                                Discard
-                            </button>
-                            <button
-                                onClick={handleCancelNavigation}
-                                className="flex-1 px-4 py-2.5 rounded-lg bg-slate-800 text-slate-300 border border-white/10 hover:bg-slate-700 transition-all font-medium"
-                            >
-                                Cancel
-                            </button>
+                            <p className="text-slate-400 mb-6">
+                                You have unsaved changes. Would you like to save them before leaving?
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={handleSaveAndNavigate}
+                                    className="flex-1 px-4 py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all font-medium"
+                                >
+                                    Save & Leave
+                                </button>
+                                <button
+                                    onClick={handleDiscardAndNavigate}
+                                    className="flex-1 px-4 py-2.5 rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all font-medium"
+                                >
+                                    Discard
+                                </button>
+                                <button
+                                    onClick={handleCancelNavigation}
+                                    className="flex-1 px-4 py-2.5 rounded-lg bg-slate-800 text-slate-300 border border-white/10 hover:bg-slate-700 transition-all font-medium"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </div >
     );
 }

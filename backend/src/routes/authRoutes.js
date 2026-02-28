@@ -78,6 +78,10 @@ router.post('/login', async (req, res) => {
                 email: user.email,
                 profile_pic: user.profile_pic,
                 is_admin: user.is_admin,
+                is_author: user.is_author,
+                can_view_pages: user.can_view_pages,
+                can_view_tasks: user.can_view_tasks,
+                can_view_finance: user.can_view_finance,
                 created_at: user.created_at,
                 token
             });

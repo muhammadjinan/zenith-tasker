@@ -50,7 +50,7 @@ const AdminPanel = ({ isOpen, onClose }) => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
-    const [activeTab, setActiveTab] = useState('activity'); // 'activity' | 'management'
+    const [activeTab, setActiveTab] = useState('activity'); // 'activity' | 'management' | 'roles'
 
     useEffect(() => {
         if (isOpen && user?.is_admin) {
@@ -130,6 +130,39 @@ const AdminPanel = ({ isOpen, onClose }) => {
         setTimeout(() => setMessage({ type: '', text: '' }), 4000);
     };
 
+    const updateRole = async (userId, roleKey, newValue) => {
+        try {
+            // Find current user to send their existing roles (since PUT replaces all in our simple route)
+            const targetUser = users.find(u => u.id === userId);
+            const payload = {
+                is_author: targetUser.is_author,
+                can_view_pages: targetUser.can_view_pages,
+                can_view_tasks: targetUser.can_view_tasks,
+                can_view_finance: targetUser.can_view_finance,
+                [roleKey]: newValue
+            };
+
+            const res = await fetch(`${API_URL}/admin/users/${userId}/roles`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${user.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Roles updated' });
+                fetchUsers(); // Refresh to catch changes
+            } else {
+                setMessage({ type: 'error', text: data.error });
+            }
+        } catch (err) {
+            setMessage({ type: 'error', text: 'Failed to update roles' });
+        }
+        setTimeout(() => setMessage({ type: '', text: '' }), 4000);
+    };
+
     if (!isOpen || !user?.is_admin) return null;
 
     return (
@@ -177,6 +210,20 @@ const AdminPanel = ({ isOpen, onClose }) => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                             </svg>
                             User Management
+                        </span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('roles')}
+                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'roles'
+                            ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+                            }`}
+                    >
+                        <span className="flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                            User & Roles
                         </span>
                     </button>
                 </div>
@@ -281,7 +328,7 @@ const AdminPanel = ({ isOpen, onClose }) => {
                                 })}
                             </div>
                         </div>
-                    ) : (
+                    ) : activeTab === 'management' ? (
                         /* ========== USER MANAGEMENT TAB ========== */
                         <div>
                             <h3 className="text-sm font-medium text-slate-400 mb-4">User Management</h3>
@@ -327,6 +374,91 @@ const AdminPanel = ({ isOpen, onClose }) => {
                                                         Allow Reset (24h)
                                                     </button>
                                                 )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : (
+                        /* ========== USER ROLES TAB ========== */
+                        <div>
+                            <h3 className="text-sm font-medium text-slate-400 mb-4">User Roles & Permissions</h3>
+                            <div className="space-y-3">
+                                {users.filter(u => !u.is_admin).map((u) => {
+                                    const profilePic = getProfilePicUrl(u.profile_pic);
+
+                                    return (
+                                        <div key={u.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-white/5 gap-4">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-slate-700 flex items-center justify-center text-sm font-medium text-slate-300">
+                                                    {profilePic ? (
+                                                        <img src={profilePic} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        u.username?.charAt(0)?.toUpperCase() || '?'
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1 pr-4">
+                                                    <p className="text-white font-medium truncate">{u.username}</p>
+                                                    <p className="text-sm text-slate-500 truncate">{u.email || 'No email'}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Role Toggles */}
+                                            <div className="flex flex-wrap xl:flex-nowrap items-center gap-x-4 gap-y-3 flex-shrink-0">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={u.can_view_pages}
+                                                        onChange={(e) => updateRole(u.id, 'can_view_pages', e.target.checked)}
+                                                    />
+                                                    <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${u.can_view_pages ? 'bg-cyan-500' : 'bg-slate-700'}`}>
+                                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${u.can_view_pages ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </div>
+                                                    <span className={`text-xs font-medium ${u.can_view_pages ? 'text-slate-300' : 'text-slate-500'}`}>Pages</span>
+                                                </label>
+
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={u.can_view_tasks}
+                                                        onChange={(e) => updateRole(u.id, 'can_view_tasks', e.target.checked)}
+                                                    />
+                                                    <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${u.can_view_tasks ? 'bg-cyan-500' : 'bg-slate-700'}`}>
+                                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${u.can_view_tasks ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </div>
+                                                    <span className={`text-xs font-medium ${u.can_view_tasks ? 'text-slate-300' : 'text-slate-500'}`}>Tasks</span>
+                                                </label>
+
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={u.can_view_finance}
+                                                        onChange={(e) => updateRole(u.id, 'can_view_finance', e.target.checked)}
+                                                    />
+                                                    <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${u.can_view_finance ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${u.can_view_finance ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </div>
+                                                    <span className={`text-xs font-medium ${u.can_view_finance ? 'text-slate-300' : 'text-slate-500'}`}>Finance</span>
+                                                </label>
+
+                                                <div className="w-px h-6 bg-slate-700 hidden md:block"></div>
+
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="hidden"
+                                                        checked={u.is_author}
+                                                        onChange={(e) => updateRole(u.id, 'is_author', e.target.checked)}
+                                                    />
+                                                    <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${u.is_author ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+                                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${u.is_author ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                    </div>
+                                                    <span className={`text-xs font-medium ${u.is_author ? 'text-slate-300' : 'text-slate-500'}`}>KB Author</span>
+                                                </label>
                                             </div>
                                         </div>
                                     );

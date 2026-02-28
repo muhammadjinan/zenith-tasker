@@ -22,7 +22,8 @@
         "dompurify": "^3.0.6",
         "html2pdf.js": "^0.10.1",
         "html-to-docx": "^1.8.0",
-        "react-grid-layout": "^2.2.2"
+        "react-grid-layout": "^2.2.2",
+        "recharts": "^2.15.1"
     },
     "devDependencies": {
         "@types/react": "^18.2.15",

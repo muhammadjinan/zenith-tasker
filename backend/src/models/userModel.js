@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const createUser = async (username, password) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await db.query(
-        'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username, created_at',
+        'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id, username, created_at, is_admin, is_author, can_view_pages, can_view_tasks, can_view_finance',
         [username, hashedPassword]
     );
     return result.rows[0];
@@ -20,7 +20,7 @@ const findUserByUsername = async (username) => {
 
 const findUserById = async (id) => {
     const result = await db.query(
-        'SELECT id, username, email, profile_pic, is_admin, created_at FROM users WHERE id = $1',
+        'SELECT id, username, email, profile_pic, is_admin, is_author, can_view_pages, can_view_tasks, can_view_finance, created_at FROM users WHERE id = $1',
         [id]
     );
     return result.rows[0];
@@ -106,7 +106,7 @@ const isResetAllowed = async (userId) => {
 
 const getAllUsers = async () => {
     const result = await db.query(
-        `SELECT id, username, email, profile_pic, is_admin, status, reset_allowed_until, last_login, created_at,
+        `SELECT id, username, email, profile_pic, is_admin, is_author, can_view_pages, can_view_tasks, can_view_finance, status, reset_allowed_until, last_login, created_at,
          COALESCE((
            SELECT COUNT(DISTINCT DATE(logged_in_at))
            FROM login_history
@@ -146,11 +146,25 @@ const linkGoogleAccount = async (userId, googleId, profilePic) => {
     return result.rows[0];
 };
 
+const updateUserRoles = async (userId, { is_author, can_view_pages, can_view_tasks, can_view_finance }) => {
+    const result = await db.query(
+        `UPDATE users SET 
+            is_author = COALESCE($1, is_author),
+            can_view_pages = COALESCE($2, can_view_pages),
+            can_view_tasks = COALESCE($3, can_view_tasks),
+            can_view_finance = COALESCE($4, can_view_finance)
+         WHERE id = $5 
+         RETURNING id, is_admin, is_author, can_view_pages, can_view_tasks, can_view_finance`,
+        [is_author, can_view_pages, can_view_tasks, can_view_finance, userId]
+    );
+    return result.rows[0];
+};
+
 const createGoogleUser = async (username, email, googleId, profilePic) => {
     const result = await db.query(
         `INSERT INTO users (username, password, email, profile_pic, google_id) 
          VALUES ($1, '', $2, $3, $4) 
-         RETURNING id, username, email, profile_pic, is_admin, google_id, created_at`,
+         RETURNING id, username, email, profile_pic, is_admin, google_id, created_at, is_author, can_view_pages, can_view_tasks, can_view_finance`,
         [username, email, profilePic, googleId]
     );
     return result.rows[0];
@@ -204,6 +218,7 @@ module.exports = {
     isResetAllowed,
     getAllUsers,
     recordLogin,
+    updateUserRoles,
     deactivateUser,
     deleteUser,
     getDashboardLayout,

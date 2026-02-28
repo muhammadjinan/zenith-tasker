@@ -71,9 +71,9 @@ const updateTask = async (taskId, userId, updates) => {
              description = COALESCE($2, description),
              status = COALESCE($3, status),
              priority = COALESCE($4, priority),
-             due_date = $5,
+             due_date = COALESCE($5, due_date),
              category = COALESCE($6, category),
-             page_id = $7,
+             page_id = COALESCE($7, page_id),
              order_index = COALESCE($8, order_index),
              updated_at = NOW()
          WHERE id = $9 AND user_id = $10

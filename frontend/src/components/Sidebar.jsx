@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 import ProfileModal from './ProfileModal';
 import AdminPanel from './AdminPanel';
+import PageTree from './PageTree';
 
 const SortablePageItem = ({ page, activePageId, onSelectPage, onDeletePage }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id });
@@ -66,11 +67,9 @@ const SortablePageItem = ({ page, activePageId, onSelectPage, onDeletePage }) =>
   );
 };
 
-const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, onDeletePage, onReorder, user, onLogout, activeView, onViewChange, taskFilter = 'all', onTaskFilterChange, pagesFilter = 'all', onPagesFilterChange, isOpen = true, onClose }) => {
+const Sidebar = ({ pages, tasks = [], financeTrackersCount = 0, onCreatePage, onCreateSubPage, activePageId, onSelectPage, onDeletePage, onReorder, user, onLogout, activeView, onViewChange, taskFilter = 'all', onTaskFilterChange, pagesFilter = 'all', onPagesFilterChange, isOpen = true, onClose, onOpenSearch }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [isPagesExpanded, setIsPagesExpanded] = useState(activeView === 'pages');
-  const [isTasksExpanded, setIsTasksExpanded] = useState(activeView === 'tasks');
   const { getProfilePicUrl } = useAuth();
 
   // Compute counts for subtabs
@@ -88,17 +87,8 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
     favorites: pages.filter(p => p.is_favorite).length,
   };
 
-  // Keep sections expanded when their view is active (mutually exclusive)
-  // Also collapse the other section to prevent both being expanded
-  useEffect(() => {
-    if (activeView === 'tasks') {
-      setIsTasksExpanded(true);
-      setIsPagesExpanded(false);
-    } else if (activeView === 'pages') {
-      setIsPagesExpanded(true);
-      setIsTasksExpanded(false);
-    }
-  }, [activeView]);
+  // Task counts for badge
+  const totalTasks = tasks.length;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -148,13 +138,24 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
       `}>
         {/* Brand */}
         <div className="p-6 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <span className="text-white font-bold text-lg">Z</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                <span className="text-white font-bold text-lg">Z</span>
+              </div>
+              <h1 className="text-xl font-semibold text-white tracking-tight">
+                Zenith
+              </h1>
             </div>
-            <h1 className="text-xl font-semibold text-white tracking-tight">
-              Zenith
-            </h1>
+            <button
+              onClick={() => { onOpenSearch && onOpenSearch(); }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all"
+              title="Search (Ctrl+K)"
+            >
+              <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -197,184 +198,82 @@ const Sidebar = ({ pages, tasks = [], onCreatePage, activePageId, onSelectPage, 
             </button>
           </div>
 
-          {/* Tasks Section */}
-          <div className="mb-1">
-            <div className="flex items-center px-3 py-2">
+          {/* Tasks */}
+          {(user?.is_admin || user?.can_view_tasks) && (
+            <div className="mb-1">
               <button
-                onClick={() => setIsTasksExpanded(!isTasksExpanded)}
-                className={`flex-1 flex items-center gap-2 cursor-pointer transition-colors rounded-lg hover:bg-white/5 -ml-2 pl-2 py-1 ${activeView === 'tasks' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-              >
-                <svg
-                  className={`w-3 h-3 transition-transform duration-200 ${isTasksExpanded ? 'rotate-90' : ''} ${activeView === 'tasks' ? 'text-cyan-400' : 'text-slate-500'
-                    }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <svg className={`w-4 h-4 ${activeView === 'tasks' ? 'text-cyan-400' : 'text-cyan-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  <rect x="3" y="3" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
-                </svg>
-                <span className={`text-sm font-medium ${activeView === 'tasks' ? 'text-cyan-400' : 'text-slate-400'}`}>Tasks</span>
-              </button>
-            </div>
-
-            {isTasksExpanded && (
-              <div className="space-y-0.5 ml-2">
-                <button
-                  onClick={() => { onTaskFilterChange && onTaskFilterChange('all'); closeMobile(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'all'
-                    ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                    }`}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                  <span className="text-sm font-medium">All Tasks</span>
-                  <span className="ml-auto text-xs text-slate-500">{taskCounts.all}</span>
-                </button>
-
-                <button
-                  onClick={() => { onTaskFilterChange && onTaskFilterChange('todo'); closeMobile(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'todo'
-                    ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                    }`}
-                >
-                  <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  <span className="text-sm font-medium">To Do</span>
-                  <span className="ml-auto text-xs text-slate-500">{taskCounts.todo}</span>
-                </button>
-
-                <button
-                  onClick={() => { onTaskFilterChange && onTaskFilterChange('inprogress'); closeMobile(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'inprogress'
-                    ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                    }`}
-                >
-                  <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm font-medium">In Progress</span>
-                  <span className="ml-auto text-xs text-slate-500">{taskCounts.inprogress}</span>
-                </button>
-
-                <button
-                  onClick={() => { onTaskFilterChange && onTaskFilterChange('done'); closeMobile(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'done'
-                    ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                    }`}
-                >
-                  <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm font-medium">Done</span>
-                  <span className="ml-auto text-xs text-slate-500">{taskCounts.done}</span>
-                </button>
-
-                <button
-                  onClick={() => { onTaskFilterChange && onTaskFilterChange('overdue'); closeMobile(); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'tasks' && taskFilter === 'overdue'
-                    ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                    }`}
-                >
-                  <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <span className="text-sm font-medium">Overdue</span>
-                  <span className="ml-auto text-xs text-slate-500">{taskCounts.overdue}</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Pages Header - Collapsible */}
-          <div className="flex items-center px-3 py-2">
-            <button
-              onClick={() => setIsPagesExpanded(!isPagesExpanded)}
-              className={`flex-1 flex items-center gap-2 cursor-pointer transition-colors rounded-lg hover:bg-white/5 -ml-2 pl-2 py-1 ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-400 hover:text-slate-200'
-                }`}
-            >
-              <svg
-                className={`w-3 h-3 transition-transform duration-200 ${isPagesExpanded ? 'rotate-90' : ''} ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-500'
-                  }`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <svg className={`w-4 h-4 ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className={`text-sm font-medium ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-400'}`}>Pages</span>
-            </button>
-            <button
-              onClick={() => { onCreatePage(); closeMobile(); }}
-              className="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all ml-2"
-              title="New Page"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Pages Subtabs - Collapsible */}
-          {isPagesExpanded && (
-            <div className="space-y-0.5 ml-2">
-              <button
-                onClick={() => { onPagesFilterChange && onPagesFilterChange('all'); closeMobile(); }}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'all'
+                onClick={() => { onViewChange('tasks'); closeMobile(); }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${activeView === 'tasks'
                   ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
                   : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
                   }`}
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                <svg className={`w-5 h-5 ${activeView === 'tasks' ? 'text-cyan-400' : 'text-cyan-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
-                <span className="text-sm font-medium">All Pages</span>
-                <span className="ml-auto text-xs text-slate-500">{pages.length}</span>
-              </button>
-
-              <button
-                onClick={() => { onPagesFilterChange && onPagesFilterChange('recent'); closeMobile(); }}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'recent'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                  }`}
-              >
-                <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-sm font-medium">Recently Edited</span>
-                <span className="ml-auto text-xs text-slate-500">{pageCounts.recent}</span>
-              </button>
-
-              <button
-                onClick={() => { onPagesFilterChange && onPagesFilterChange('favorites'); closeMobile(); }}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all ${activeView === 'pages' && pagesFilter === 'favorites'
-                  ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                  }`}
-              >
-                <svg className="w-4 h-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                </svg>
-                <span className="text-sm font-medium">Favorites</span>
-                <span className="ml-auto text-xs text-slate-500">{pageCounts.favorites}</span>
+                <span className="text-sm font-medium">Tasks</span>
+                {totalTasks > 0 && <span className="ml-auto text-xs text-slate-500">{totalTasks}</span>}
               </button>
             </div>
           )}
+
+          {/* Finance Section */}
+          {(user?.is_admin || user?.can_view_finance) && (
+            <div className="mb-1">
+              <button
+                onClick={() => { onViewChange('finance'); closeMobile(); }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${activeView === 'finance'
+                  ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  }`}
+              >
+                <svg className={`w-5 h-5 ${activeView === 'finance' ? 'text-cyan-400' : 'text-emerald-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-medium">Finance</span>
+                {financeTrackersCount > 0 && <span className="ml-auto text-xs text-slate-500">{financeTrackersCount}</span>}
+              </button>
+            </div>
+          )}
+
+          {/* Pages */}
+          {(user?.is_admin || user?.can_view_pages) && (
+            <div className="mb-1">
+              <button
+                onClick={() => { onViewChange('pages'); closeMobile(); }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${activeView === 'pages'
+                  ? 'bg-cyan-500/10 text-cyan-400 border-l-[3px] border-cyan-400'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  }`}
+              >
+                <svg className={`w-5 h-5 ${activeView === 'pages' ? 'text-cyan-400' : 'text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="text-sm font-medium">Pages</span>
+                {pages.length > 0 && <span className="ml-auto text-xs text-slate-500">{pages.length}</span>}
+              </button>
+            </div>
+          )}
+
+          {/* Articles */}
+          {/* Everyone is allowed to view KB articles currently, they don't have a rigid feature lock except for authoring.
+              If the user decides KB viewing should be permission gated, we can use user?.can_view_articles later. For now, it stays visible. */}
+          <div className="mb-1">
+            <button
+              onClick={() => { onViewChange('articles'); closeMobile(); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all ${activeView === 'articles'
+                ? 'bg-indigo-500/10 text-indigo-400 border-l-[3px] border-indigo-400'
+                : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                }`}
+            >
+              <svg className={`w-5 h-5 ${activeView === 'articles' ? 'text-indigo-400' : 'text-slate-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              <span className="text-sm font-medium">Articles</span>
+            </button>
+          </div>
+
+
 
           {/* Settings Section (for all users) */}
           <div className="mt-4 pt-4 border-t border-white/5">

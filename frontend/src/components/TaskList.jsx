@@ -4,12 +4,13 @@ import { useAuth } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd }) => {
+const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd, onOpenSearch }) => {
     const { user } = useAuth();
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState('list'); // 'list' or 'kanban'
-    const [filter, setFilter] = useState(externalFilter || 'all'); // 'all', 'todo', 'in_progress', 'done', 'overdue'
+    const [filter, setFilter] = useState(externalFilter || 'all'); // 'all', 'todo', 'in_progress', 'done', 'overdue', 'pending'
+    const [sortBy, setSortBy] = useState('created_desc'); // default to newest first
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [isAddingTask, setIsAddingTask] = useState(false);
     const [mobileKanbanColumn, setMobileKanbanColumn] = useState(null); // which status popup is open on mobile
@@ -31,7 +32,8 @@ const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd }) => {
                 'todo': 'todo',
                 'inprogress': 'in_progress',
                 'done': 'done',
-                'overdue': 'overdue'
+                'overdue': 'overdue',
+                'pending': 'pending'
             };
             setFilter(filterMap[externalFilter] || 'all');
         }
@@ -232,20 +234,49 @@ const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd }) => {
         setDraggingTaskId(null);
     };
 
-    const filteredTasks = tasks.filter(t => {
+    let filteredTasks = tasks.filter(t => {
         if (filter === 'all') return true;
         if (filter === 'overdue') return isOverdue(t);
+        if (filter === 'pending') return t.status !== 'done' && t.status !== 'completed';
         return t.status === filter;
+    });
+
+    // Apply Sorting
+    filteredTasks = [...filteredTasks].sort((a, b) => {
+        switch (sortBy) {
+            case 'created_desc':
+                return new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now());
+            case 'created_asc':
+                return new Date(a.created_at || Date.now()) - new Date(b.created_at || Date.now());
+            case 'due_asc':
+                if (!a.due_date) return 1;
+                if (!b.due_date) return -1;
+                return new Date(a.due_date) - new Date(b.due_date);
+            case 'due_desc':
+                if (!a.due_date) return 1;
+                if (!b.due_date) return -1;
+                return new Date(b.due_date) - new Date(a.due_date);
+            case 'priority_desc': {
+                const pVal = { high: 3, medium: 2, low: 1 };
+                return (pVal[b.priority] || 0) - (pVal[a.priority] || 0);
+            }
+            case 'priority_asc': {
+                const pVal = { high: 3, medium: 2, low: 1 };
+                return (pVal[a.priority] || 0) - (pVal[b.priority] || 0);
+            }
+            default:
+                return 0;
+        }
     });
 
     // For Kanban view, use ALL tasks (not filtered)
     // Overdue tasks are shown in a separate column
-    const overdueTasks = tasks.filter(t => isOverdue(t));
+    const overdueTasks = filteredTasks.filter(t => isOverdue(t));
     const tasksByStatus = {
         overdue: overdueTasks,
-        todo: tasks.filter(t => t.status === 'todo' && !isOverdue(t)),
-        in_progress: tasks.filter(t => t.status === 'in_progress' && !isOverdue(t)),
-        done: tasks.filter(t => t.status === 'done')
+        todo: filteredTasks.filter(t => t.status === 'todo' && !isOverdue(t)),
+        in_progress: filteredTasks.filter(t => t.status === 'in_progress' && !isOverdue(t)),
+        done: filteredTasks.filter(t => t.status === 'done')
     };
 
     if (loading) {
@@ -256,57 +287,120 @@ const TaskList = ({ pages, onSelectPage, externalFilter, autoAdd }) => {
         );
     }
 
+    const getHeaderTitle = () => {
+        if (view === 'kanban') return 'Kanban Board';
+        switch (filter) {
+            case 'all': return 'All Tasks';
+            case 'pending': return 'Pending Tasks';
+            case 'todo': return 'Tasks to Do';
+            case 'in_progress': return 'In Progress Tasks';
+            case 'done': return 'Completed Tasks';
+            case 'overdue': return 'Overdue Tasks';
+            default: return 'Tasks';
+        }
+    };
+
     return (
         <div className="h-full flex flex-col">
-            {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pl-12 lg:pl-0">
-                <h2 className="text-2xl font-semibold text-white">Tasks</h2>
-                <div className="flex items-center gap-3 flex-wrap">
+            {/* Header Line */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 pl-12 lg:pl-0">
+                <h1 className="text-3xl font-semibold text-white">{getHeaderTitle()}</h1>
+
+                <div className="flex items-center gap-3">
+                    {/* Search Button */}
+                    {onOpenSearch && (
+                        <button
+                            onClick={onOpenSearch}
+                            className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/50 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all cursor-pointer"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <span className="text-sm">Search Tasks...</span>
+                            <kbd className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-slate-700/50 text-slate-500 border border-white/10">Ctrl+K</kbd>
+                        </button>
+                    )}
+
                     {/* View Toggle */}
-                    <div className="flex bg-slate-800/50 rounded-lg p-1">
+                    <div className="flex bg-slate-800/50 rounded-lg p-1 border border-white/10">
                         <button
                             onClick={() => setView('list')}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${view === 'list' ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:text-white'
+                            className={`px-3 py-1.5 rounded-md text-sm transition-all ${view === 'list'
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : 'text-slate-400 hover:text-white'
                                 }`}
+                            title="List View"
                         >
-                            List
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
                         </button>
                         <button
                             onClick={() => setView('kanban')}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${view === 'kanban' ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:text-white'
+                            className={`px-3 py-1.5 rounded-md text-sm transition-all ${view === 'kanban'
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : 'text-slate-400 hover:text-white'
                                 }`}
+                            title="Kanban View"
                         >
-                            Kanban
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h4a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h4a2 2 0 012 2v10a2 2 0 01-2 2h-4a2 2 0 01-2-2V6z" />
+                            </svg>
                         </button>
                     </div>
-
-                    {/* Filter (list view only) */}
-                    {view === 'list' && (
-                        <select
-                            value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
-                            className="px-3 py-1.5 bg-slate-800/50 border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-cyan-500"
-                        >
-                            <option value="all">All Tasks</option>
-                            <option value="overdue">Overdue</option>
-                            <option value="todo">To Do</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="done">Done</option>
-                        </select>
-                    )}
 
                     {/* Add Task Button */}
                     <button
                         onClick={() => setIsAddingTask(true)}
-                        className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg flex items-center gap-2 transition-colors"
+                        className="px-4 py-2 rounded-xl font-medium bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
-                        Add Task
+                        New Task
                     </button>
                 </div>
             </div>
+
+            {/* Filter Pills and Sorting */}
+            {view === 'list' && (
+                <div className="flex justify-between items-center mb-6 pl-12 lg:pl-0 w-full flex-wrap gap-4">
+                    <div className="flex gap-1 overflow-x-auto pb-1 flex-1 min-w-0 pr-4 styled-scrollbar">
+                        {[
+                            { id: 'all', label: 'All', icon: '📋', count: tasks.length },
+                            { id: 'pending', label: 'Pending', icon: '⏳', count: tasks.filter(t => t.status !== 'done' && t.status !== 'completed').length },
+                            { id: 'todo', label: 'To Do', icon: '📝', count: tasks.filter(t => t.status === 'todo').length },
+                            { id: 'in_progress', label: 'In Progress', icon: '▶️', count: tasks.filter(t => t.status === 'in_progress').length },
+                            { id: 'done', label: 'Done', icon: '✅', count: tasks.filter(t => t.status === 'done' || t.status === 'completed').length },
+                            { id: 'overdue', label: 'Overdue', icon: '⚠️', count: tasks.filter(t => isOverdue(t)).length },
+                        ].map(f => (
+                            <button key={f.id} onClick={() => setFilter(f.id)}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${filter === f.id ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'}`}>
+                                <span>{f.icon}</span>
+                                {f.label}
+                                <span className={`text-[10px] ${filter === f.id ? 'text-cyan-400/70' : 'text-slate-600'}`}>{f.count}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Sorting Dropdown */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-sm font-medium text-slate-400">Sort by:</span>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value)}
+                            className="bg-slate-800/80 border border-white/10 text-slate-300 text-sm rounded-lg px-3 py-2 cursor-pointer focus:outline-none focus:border-cyan-500 transition-colors"
+                        >
+                            <option value="created_desc">Newest First</option>
+                            <option value="created_asc">Oldest First</option>
+                            <option value="due_asc">Due Date: Earliest</option>
+                            <option value="due_desc">Due Date: Latest</option>
+                            <option value="priority_desc">Priority: High to Low</option>
+                            <option value="priority_asc">Priority: Low to High</option>
+                        </select>
+                    </div>
+                </div>
+            )}
 
             {/* Quick Add Form */}
             {isAddingTask && (

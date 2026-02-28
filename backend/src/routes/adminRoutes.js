@@ -62,5 +62,34 @@ router.delete('/users/:id/allow-reset', verifyToken, requireAdmin, async (req, r
         res.status(500).json({ error: 'Server error' });
     }
 });
+// Update user feature roles (Admin only)
+router.put('/users/:id/roles', verifyToken, requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { is_author, can_view_pages, can_view_tasks, can_view_finance } = req.body;
+
+    try {
+        const user = await userModel.findUserById(parseInt(id));
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Prevent modification of an admin user's roles
+        if (user.is_admin) {
+            return res.status(403).json({ error: 'Cannot modify administrator roles directly' });
+        }
+
+        const updatedUser = await userModel.updateUserRoles(parseInt(id), {
+            is_author,
+            can_view_pages,
+            can_view_tasks,
+            can_view_finance
+        });
+
+        res.json({ message: 'User roles updated successfully', user: updatedUser });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 module.exports = router;
