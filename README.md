@@ -1,3 +1,5 @@
+> [!WARNING]
+> This project is experimental and need to fix many security flaws.
 # Zenith Tasker
 
 A modern, full-stack productivity application for managing tasks and notes with a beautiful, responsive UI.
